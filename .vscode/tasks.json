@@ -1,0 +1,54 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "cppbuild",
+			"label": "Clang build debug",
+			"command": "/usr/bin/clang",
+			"args": [
+				"-fcolor-diagnostics",
+				"-fansi-escape-codes",
+				"-g",
+				"${file}",
+				"-o",
+				"${fileDirname}/${fileBasenameNoExtension}",
+				"-Wall",
+				"-Wextra",
+				"-pedantic",
+				"-DEBUG",
+				"-pthread"
+			],
+			"options": {
+				"cwd": "${fileDirname}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build",
+			"detail": "compiler: /usr/bin/clang"
+		},
+		
+		{
+			"type": "cppbuild",
+			"label": "Clang build release",
+			"command": "/usr/bin/clang",
+			"args": [
+				"${file}",
+				"-o",
+				"${fileDirname}/${fileBasenameNoExtension}",
+				"-g",
+				"-Ofast",
+				"-Rpass=loop-vectorize",
+				"-pthread"
+			],
+			"options": {
+				"cwd": "${fileDirname}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build",
+			"detail": "compiler: /usr/bin/clang"
+		}
+	]
+}
