@@ -135,7 +135,7 @@ typedef struct thread_queue
 void Matrixf64Multiply2Rows(matrix_multiply_job *Entry)
 {
 	pthread_mutex_lock(Entry->ResultRowLock);
-	#pragma clang loop vectorize(enable)
+	#pragma clang loop vectorize(enable)  // according to the compiler this fails even if we ask for it explicitely
 	for (size_t k = 0; k < Entry->BRowLen; ++k)
 	{
 		// we just need to lock this so only one thread can write to it at a time
