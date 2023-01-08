@@ -1,3 +1,4 @@
+#include <arm_neon.h>
 #include <assert.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -34,10 +35,79 @@ Matrixf64 Matrixf64MultiplyFast(const Matrixf64 *A, const Matrixf64 *B)
 		{
 			const double *BRow = B->Data + k * B->NCols;
 			const double Aik = ARow[k];
-			// #pragma clang loop vectorize_width(2) interleave_count(8)
+			// #pragma clang loop vectorize_width(8) // interleave_count(4)
 			for (size_t j = 0; j < B->NCols; j++)
 			{
 				ResultRow[j] += Aik * BRow[j];
+			}
+		}
+	}
+	return Result;
+}
+
+/* 
+Let's write this in NEON 
+
+v1 - First verdict: compiled in debug mode, this ends up about halfway between naive mode and fast mode.
+Memory access still seems to be the main bottleneck. For the next version we should actually 
+make this tiled.
+
+*/
+Matrixf64 Matrixf64MultiplyFaster(const Matrixf64 *A, const Matrixf64 *B)
+{
+	assert(A->NCols == B->NRows);
+	Matrixf64 Result;
+	Result.NRows = A->NRows;
+	Result.NCols = B->NCols;
+	Result.Data = calloc(Result.NRows * Result.NCols, sizeof(double));
+	const int BlockSize = 8;
+	const int NBlocks = (int)A->NCols / BlockSize;
+	const int Remainder = (int)A->NCols % BlockSize;
+	for (size_t i = 0; i < A->NRows; i++)
+	{
+		const double *ARow = A->Data + i * A->NCols;
+		double *ResultRow = Result.Data + i * Result.NCols;
+		for (size_t k = 0; k < B->NRows; k++)
+		{
+			const double *BRow = B->Data + k * B->NCols;
+			// let's assume we can do 4x float64 at a time (we should be able to, NEON says 128x4 FMA)
+			for (size_t j = 0; j < NBlocks; j++)
+			{
+				// load 4 blocks of 2 elements from Result into memory
+				float64x2x4_t ResBlocks = vld4q_f64(ResultRow + j * BlockSize);
+				// load 4 blocks of 2 elements from A and B into memory
+				float64x2x4_t ABlocks = vld4q_f64(ARow + j * BlockSize);
+				float64x2x4_t BBlocks = vld4q_f64(BRow + j * BlockSize);
+				for (size_t ValIdx = 0; ValIdx < BlockSize / 2; ValIdx++)
+				{
+					ResBlocks.val[ValIdx] = vcmlaq_f64(ResBlocks.val[ValIdx], ABlocks.val[ValIdx], BBlocks.val[ValIdx]);
+				}
+				vst4q_f64(ResultRow + j * BlockSize, ResBlocks);
+			}
+			for (size_t j = B->NCols - Remainder; j < B->NCols; j++) {
+				ResultRow[j] += ARow[j] * BRow[j];
+			}
+		}
+	}
+	return Result;
+}
+
+/* Naive implementation (that gets very optimized by the compiler) */
+
+Matrixf64 Matrixf64MultiplyNaive(const Matrixf64 *A, const Matrixf64 *B)
+{
+	assert(A->NCols == B->NRows);
+	Matrixf64 Result;
+	Result.NRows = A->NRows;
+	Result.NCols = B->NCols;
+	Result.Data = calloc(Result.NRows * Result.NCols, sizeof(double));
+	for (size_t i = 0; i < A->NRows; i++)
+	{
+		for (size_t j = 0; j < B->NCols; j++)
+		{
+			for (size_t k = 0; k < B->NRows; k++)
+			{
+				Result.Data[i * A->NRows + j] += A->Data[i * A->NRows + k] * B->Data[j * B->NRows + k];
 			}
 		}
 	}
@@ -85,26 +155,6 @@ An order of magnitude faster than numpy?
 
 */
 
-Matrixf64 Matrixf64MultiplyNaive(const Matrixf64 *A, const Matrixf64 *B)
-{
-	assert(A->NCols == B->NRows);
-	Matrixf64 Result;
-	Result.NRows = A->NRows;
-	Result.NCols = B->NCols;
-	Result.Data = calloc(Result.NRows * Result.NCols, sizeof(double));
-	for (size_t i = 0; i < A->NRows; i++)
-	{
-		for (size_t j = 0; j < B->NCols; j++)
-		{
-			for (size_t k = 0; k < B->NRows; k++)
-			{
-				Result.Data[i * A->NRows + j] += A->Data[i * A->NRows + k] * B->Data[j * B->NRows + k];
-			}
-		}
-	}
-	return Result;
-}
-
 /*
 Let's take the fast version and make it multithreaded
 
@@ -135,7 +185,7 @@ typedef struct thread_queue
 void Matrixf64Multiply2Rows(matrix_multiply_job *Entry)
 {
 	pthread_mutex_lock(Entry->ResultRowLock);
-	#pragma clang loop vectorize(enable)  // according to the compiler this fails even if we ask for it explicitely
+#pragma clang loop vectorize(enable) // according to the compiler this fails even if we ask for it explicitely
 	for (size_t k = 0; k < Entry->BRowLen; ++k)
 	{
 		// we just need to lock this so only one thread can write to it at a time
@@ -219,14 +269,16 @@ void HandleMatrixMultiplyThread(void *Input)
 	thread_input *InputArgs = (thread_input *)Input;
 	for (;;)
 	{
-		if (IsWorkRemaining(InputArgs->Queue)) {
+		if (IsWorkRemaining(InputArgs->Queue))
+		{
 			DoMatrixMultiplyf64ThreadWork(InputArgs->Jobs, InputArgs->Queue);
-		} else{
+		}
+		else
+		{
 			sem_wait(InputArgs->Queue->Semaphore);
 		}
 	}
 }
-
 
 Matrixf64
 Matrixf64MultiplyMultithreaded(const Matrixf64 *A, const Matrixf64 *B, size_t NThreads)
@@ -250,13 +302,14 @@ Matrixf64MultiplyMultithreaded(const Matrixf64 *A, const Matrixf64 *B, size_t NT
 	Result.Data = calloc(Result.NRows * Result.NCols, sizeof(double));
 	assert(A->NRows * B->NRows < Queue->MaxQueueSize);
 	pthread_mutex_t RowLocks[A->NRows];
-	for (size_t i = 0; i < A->NRows; i++){
+	for (size_t i = 0; i < A->NRows; i++)
+	{
 		pthread_mutex_init(RowLocks + i, NULL);
 	}
 	for (size_t j = 0; j < B->NRows; j++)
 	{
 		for (size_t i = 0; i < A->NRows; i++)
-		{	
+		{
 			// go in this order so that we stack the jobs in column major of the result matrix -> maybe better order for the multithreading queue
 			matrix_multiply_job *ThisJob = Jobs + j * B->NRows + i;
 			ThisJob->ARowIdx = i;
@@ -349,9 +402,14 @@ void test_matrix_multiply(size_t MatrixSize, int PrintResult, int NThreads, bool
 	printf("Fast done in %lfs\n", (double)(end - start) / CLOCKS_PER_SEC);
 	free(Result.Data);
 	start = clock();
-	Result = Matrixf64MultiplyMultithreaded(&A, &B, NThreads);
+	Result = Matrixf64MultiplyFaster(&A, &B);
 	end = clock();
-	printf("Multithreaded done in %lfs with %d threads\n", (double)(end - start) / CLOCKS_PER_SEC, NThreads);
+	printf("FastER done in %lfs\n", (double)(end - start) / CLOCKS_PER_SEC);
+	// free(Result.Data);
+	// start = clock();
+	// Result = Matrixf64MultiplyMultithreaded(&A, &B, NThreads);
+	// end = clock();
+	// printf("Multithreaded done in %lfs with %d threads\n", (double)(end - start) / CLOCKS_PER_SEC, NThreads);
 	if (PrintResult)
 	{
 		printf("Result\n");
@@ -368,6 +426,6 @@ void test_matrix_multiply(size_t MatrixSize, int PrintResult, int NThreads, bool
 
 int main()
 {
-	test_matrix_multiply(1000, 0, 8, 0);
+	test_matrix_multiply(1000, 0, 2, 0);
 	return 0;
 }
