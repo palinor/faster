@@ -4,5 +4,8 @@
 	"lldb.consoleMode": "commands",
 	"lldb.showDisassembly": "auto",
 	"C_Cpp.intelliSenseEngineFallback": "disabled",
-	"C_Cpp.intelliSenseEngine": "default"
+	"C_Cpp.intelliSenseEngine": "default",
+	"files.associations": {
+		"arm_neon.h": "c"
+	}
 }

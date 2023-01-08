@@ -45,11 +45,11 @@ Matrixf64 Matrixf64MultiplyFast(const Matrixf64 *A, const Matrixf64 *B)
 	return Result;
 }
 
-/* 
-Let's write this in NEON 
+/*
+Let's write this in NEON
 
 v1 - First verdict: compiled in debug mode, this ends up about halfway between naive mode and fast mode.
-Memory access still seems to be the main bottleneck. For the next version we should actually 
+Memory access still seems to be the main bottleneck. For the next version we should actually
 make this tiled.
 
 */
@@ -84,8 +84,362 @@ Matrixf64 Matrixf64MultiplyFaster(const Matrixf64 *A, const Matrixf64 *B)
 				}
 				vst4q_f64(ResultRow + j * BlockSize, ResBlocks);
 			}
-			for (size_t j = B->NCols - Remainder; j < B->NCols; j++) {
+			for (size_t j = B->NCols - Remainder; j < B->NCols; j++)
+			{
 				ResultRow[j] += ARow[j] * BRow[j];
+			}
+		}
+	}
+	return Result;
+}
+
+/*
+v2 - Let's tile everything assuming we can completely pack our NEON registers.
+We can do 4 FMLA/cycle on 128b-wide registers. So 8 float64s at a time.
+The loops need to be swapped around a bit - we need to load the first block of A from outside the loop, and load multiple B blocks at once
+Let's try 2x8 tiles
+
+In debug mode this does indeed seem faster than the previous SIMD implementation... Still not as fast as the regular Savine version though.
+
+Benchmarks on 1000x1000 matrix (these have some variability on each run, but the ranking stays the same):
+Slow done in 3.470338s
+Fast done in 1.222842s
+FastER done in 2.462918s
+FastEST done in 1.810831s
+
+In release mode, it is faster!
+
+Slow done in 0.170662s
+Fast done in 0.156581s
+FastER done in 0.357042s
+FastEST done in 0.127912s
+
+So maybe we just need to change the tile structure a bit. I don't think the float64x2x4_t structs actually block all the registers
+we would like them to, it's not like they can execute all in parallel.
+*/
+
+void MultiplyTileSIMD2x8(Matrixf64 *Result, const Matrixf64 *A, const Matrixf64 *B, size_t TileX, size_t TileY)
+{
+	size_t TileRows = 2;
+	size_t TileCols = 8;
+	float64x2x4_t ResultRowBlocks[TileRows];
+	float64x2x4_t ABlocks[TileRows];
+	size_t ResultColIdx = TileY * TileCols;
+	for (size_t i = 0; i < TileRows; i++)
+	{
+		size_t ResultRowIdx = TileX * TileRows + i;
+		ResultRowBlocks[i] = vld4q_f64(Result->Data + ResultRowIdx * Result->NCols + ResultColIdx);
+		ABlocks[i] = vld4q_f64(A->Data + ResultRowIdx * A->NCols + ResultColIdx);
+	}
+	for (size_t j = 0; j < Result->NRows; j++)
+	{
+		float64x2x4_t BBlocks = vld4q_f64(B->Data + j * B->NCols + ResultColIdx);
+		for (size_t ValIdx = 0; ValIdx < 4; ValIdx++)
+		{
+			for (size_t i = 0; i < TileRows; i++)
+			{
+				ResultRowBlocks[i].val[ValIdx] = vcmlaq_f64(ResultRowBlocks[i].val[ValIdx], ABlocks[i].val[ValIdx], BBlocks.val[ValIdx]);
+			}
+		}
+	}
+	for (size_t i = 0; i < TileRows; i++)
+	{
+		size_t ResultRowIdx = TileX * TileRows + i;
+		vst4q_f64(Result->Data + ResultRowIdx * Result->NCols + ResultColIdx, ResultRowBlocks[i]);
+	}
+}
+
+/*
+v3 - Let's do this in 2x4 mode now. Maybe a more efficient tiling structure
+
+We could probably write a more generic implementation of this, but it's late and I'm lazy.
+
+Verdict: In debug mode, this does not seem to make that much of a difference.... And it seems slower in release mode.
+
+Benchmarks on 1000x1000:
+
+Debug
+Slow done in 3.451018s
+Fast done in 1.214745s
+FastER done in 2.437801s
+FastEST 2x8 done in 1.821626s
+FastEST 2x4 done in 1.880704s
+
+
+Release
+Slow done in 0.173660s
+Fast done in 0.160243s
+FastER done in 0.364735s
+FastEST 2x8 done in 0.136150s
+FastEST 2x4 done in 0.179667s
+*/
+void MultiplyTileSIMD2x4(Matrixf64 *Result, const Matrixf64 *A, const Matrixf64 *B, size_t TileX, size_t TileY)
+{
+	size_t TileRows = 2;
+	size_t TileCols = 4;
+	float64x2x2_t ResultRowBlocks[TileRows];
+	float64x2x2_t ABlocks[TileRows];
+	size_t ResultColIdx = TileY * TileCols;
+	for (size_t i = 0; i < TileRows; i++)
+	{
+		size_t ResultRowIdx = TileX * TileRows + i;
+		ResultRowBlocks[i] = vld2q_f64(Result->Data + ResultRowIdx * Result->NCols + ResultColIdx);
+		ABlocks[i] = vld2q_f64(A->Data + ResultRowIdx * A->NCols + ResultColIdx);
+	}
+	for (size_t j = 0; j < Result->NRows; j++)
+	{
+		float64x2x2_t BBlocks = vld2q_f64(B->Data + j * B->NCols + ResultColIdx);
+		for (size_t ValIdx = 0; ValIdx < 2; ValIdx++)
+		{
+			for (size_t i = 0; i < TileRows; i++)
+			{
+				ResultRowBlocks[i].val[ValIdx] = vcmlaq_f64(ResultRowBlocks[i].val[ValIdx], ABlocks[i].val[ValIdx], BBlocks.val[ValIdx]);
+			}
+		}
+	}
+	for (size_t i = 0; i < TileRows; i++)
+	{
+		size_t ResultRowIdx = TileX * TileRows + i;
+		vst2q_f64(Result->Data + ResultRowIdx * Result->NCols + ResultColIdx, ResultRowBlocks[i]);
+	}
+}
+
+void MultiplyTileSIMD1x8(Matrixf64 *Result, const Matrixf64 *A, const Matrixf64 *B, size_t TileX, size_t TileY)
+{
+	size_t TileCols = 8;
+	size_t ResultColIdx = TileY * TileCols;
+	float64x2x4_t ResultRowBlock = vld4q_f64(Result->Data + TileX * Result->NCols + ResultColIdx);
+	float64x2x4_t ABlocks = vld4q_f64(A->Data + TileX * A->NCols + ResultColIdx);
+	for (size_t j = 0; j < Result->NRows; j++)
+	{
+		float64x2x4_t BBlocks = vld4q_f64(B->Data + j * B->NCols + ResultColIdx);
+		for (size_t ValIdx = 0; ValIdx < 2; ValIdx++)
+		{
+			ResultRowBlock.val[ValIdx] = vcmlaq_f64(ResultRowBlock.val[ValIdx], ABlocks.val[ValIdx], BBlocks.val[ValIdx]);
+		}
+	}
+	vst4q_f64(Result->Data + TileX * Result->NCols + ResultColIdx, ResultRowBlock);
+}
+
+void MultiplyTileSIMD1x4(Matrixf64 *Result, const Matrixf64 *A, const Matrixf64 *B, size_t TileX, size_t TileY)
+{
+	size_t TileCols = 4;
+	size_t ResultColIdx = TileY * TileCols;
+	float64x2x2_t ResultRowBlock = vld2q_f64(Result->Data + TileX * Result->NCols + ResultColIdx);
+	float64x2x2_t ABlocks = vld2q_f64(A->Data + TileX * A->NCols + ResultColIdx);
+	for (size_t j = 0; j < Result->NRows; j++)
+	{
+		float64x2x4_t BBlocks = vld4q_f64(B->Data + j * B->NCols + ResultColIdx);
+		for (size_t ValIdx = 0; ValIdx < 2; ValIdx++)
+		{
+			ResultRowBlock.val[ValIdx] = vcmlaq_f64(ResultRowBlock.val[ValIdx], ABlocks.val[ValIdx], BBlocks.val[ValIdx]);
+		}
+	}
+	vst2q_f64(Result->Data + TileX * Result->NCols + ResultColIdx, ResultRowBlock);
+}
+
+/*
+v4 Ok last try - let's load everything as 1x16 -> Maybe we get faster load times
+
+Verdict.. Faster in debug mode. Not quite there in release mode.
+
+1000x1000 Benchmarks
+
+Debug
+Slow done in 3.520341s
+Fast done in 1.254194s
+FastER done in 2.502608s
+FastEST 2x8 done in 1.885986s
+FastEST 2x4 done in 1.952919s
+FastEST 1x16 done in 1.678129s
+
+Slow done in 0.176381s
+Fast done in 0.158877s
+FastER done in 0.359372s
+FastEST 2x8 done in 0.144498s
+FastEST 2x4 done in 0.173988s
+FastEST 1x16 done in 0.171464s
+*/
+
+void MultiplyTileSIMD1x16(Matrixf64 *Result, const Matrixf64 *A, const Matrixf64 *B, size_t TileX, size_t TileY)
+{
+	size_t TileCols = 16;
+	size_t ResultColIdx = TileY * TileCols;
+	float64x2x4_t ResultRowBlocks[2];
+	float64x2x4_t ABlocks[2];
+	ResultRowBlocks[0] = vld4q_f64(Result->Data + TileX * Result->NCols + ResultColIdx);
+	ResultRowBlocks[1] = vld4q_f64(Result->Data + TileX * Result->NCols + ResultColIdx + 8);
+	ABlocks[0] = vld4q_f64(A->Data + TileX * A->NCols + ResultColIdx);
+	ABlocks[1] = vld4q_f64(A->Data + TileX * A->NCols + ResultColIdx + 8);
+	float64x2x4_t BBlocks[2];
+	for (size_t j = 0; j < Result->NRows; j++)
+	{
+		BBlocks[0] = vld4q_f64(B->Data + j * B->NCols + ResultColIdx);
+		BBlocks[1] = vld4q_f64(B->Data + j * B->NCols + ResultColIdx + 8);
+		for (size_t ValIdx = 0; ValIdx < 4; ValIdx++)
+		{
+			ResultRowBlocks[0].val[ValIdx] = vcmlaq_f64(ResultRowBlocks[0].val[ValIdx], ABlocks[0].val[ValIdx], BBlocks[0].val[ValIdx]);
+			ResultRowBlocks[1].val[ValIdx] = vcmlaq_f64(ResultRowBlocks[1].val[ValIdx], ABlocks[1].val[ValIdx], BBlocks[1].val[ValIdx]);
+		}
+	}
+	vst4q_f64(Result->Data + TileX * Result->NCols + ResultColIdx, ResultRowBlocks[0]);
+	vst4q_f64(Result->Data + TileX * Result->NCols + ResultColIdx + 8, ResultRowBlocks[1]);
+}
+
+/*
+v5 Of course! This should really be symetrical, so the "natural" tiling is 4x4. Let's give that a try
+
+Verdict: In debug mode this does seem much better. Memory layout apparently is not quite optimal, as "Fast" still marginally beats us.
+
+Release mode is fucking epic though, x2 speedup over Fast!
+
+1000x1000 Benchmarks:
+
+Debug:
+Slow done in 3.495674s
+Fast done in 1.255164s
+FastER done in 2.502835s
+FastEST 2x8 done in 1.890493s
+FastEST 2x4 done in 1.918960s
+FastEST 1x16 done in 3.247510s
+FastEST 4x4 done in 1.512352s
+
+Release:
+Slow done in 0.171948s
+Fast done in 0.153316s
+FastER done in 0.356767s
+FastEST 2x8 done in 0.099626s
+FastEST 2x4 done in 0.163341s
+FastEST 1x16 done in 0.238220s
+FastEST 4x4 done in 0.086331s
+
+Compare this with a single threaded numpy (OpenBLAS backend) benchmark of 
+0.042754173278808594s
+
+We're starting to look decent
+*/
+
+void MultiplyTileSIMD4x4(Matrixf64 *Result, const Matrixf64 *A, const Matrixf64 *B, size_t TileX, size_t TileY)
+{
+	size_t TileRows = 4;
+	size_t TileCols = 4;
+	float64x2x2_t ResultRowBlocks[TileRows];
+	float64x2x2_t ABlocks[TileRows];
+	size_t ResultColIdx = TileY * TileCols;
+	for (size_t i = 0; i < TileRows; i++)
+	{
+		size_t ResultRowIdx = TileX * TileRows + i;
+		ResultRowBlocks[i] = vld2q_f64(Result->Data + ResultRowIdx * Result->NCols + ResultColIdx);
+		ABlocks[i] = vld2q_f64(A->Data + ResultRowIdx * A->NCols + ResultColIdx);
+	}
+	for (size_t j = 0; j < Result->NRows; j++)
+	{
+		float64x2x2_t BBlocks = vld2q_f64(B->Data + j * B->NCols + ResultColIdx);
+		for (size_t ValIdx = 0; ValIdx < 2; ValIdx++)
+		{
+			for (size_t i = 0; i < TileRows; i++)
+			{
+				ResultRowBlocks[i].val[ValIdx] = vcmlaq_f64(ResultRowBlocks[i].val[ValIdx], ABlocks[i].val[ValIdx], BBlocks.val[ValIdx]);
+			}
+		}
+	}
+	for (size_t i = 0; i < TileRows; i++)
+	{
+		size_t ResultRowIdx = TileX * TileRows + i;
+		vst2q_f64(Result->Data + ResultRowIdx * Result->NCols + ResultColIdx, ResultRowBlocks[i]);
+	}
+}
+
+
+typedef enum tile_mode
+{
+	_2x8,
+	_2x4,
+	_1x16,
+	_4x4
+} tile_mode;
+
+Matrixf64 Matrixf64MultiplyFastest(const Matrixf64 *A, const Matrixf64 *B, tile_mode TileMode)
+{
+	assert(A->NCols == B->NRows);
+	Matrixf64 Result;
+	Result.NRows = A->NRows;
+	Result.NCols = B->NCols;
+	Result.Data = calloc(Result.NRows * Result.NCols, sizeof(double));
+	size_t TileRows;
+	size_t TileCols;
+	switch (TileMode)
+	{
+	case _2x4:
+		TileRows = 2;
+		TileCols = 4;
+		break;
+	case _2x8:
+		TileRows = 2;
+		TileCols = 8;
+		break;
+	case _1x16:
+		TileRows = 1;
+		TileCols = 16;
+	case _4x4:
+		TileRows = 4;
+		TileCols = 4;
+		break;
+	}
+	size_t NTileRows = A->NRows / TileRows;
+	size_t NLeftoverRows = A->NRows % TileRows;
+	size_t NTileCols = B->NCols / TileCols;
+	size_t NLeftoverCols = B->NCols % TileCols;
+	for (size_t TileX = 0; TileX < NTileRows; TileX++)
+	{
+		for (size_t TileY = 0; TileY < NTileCols; TileY++)
+		{
+			switch (TileMode)
+			{
+			case _2x4:
+				MultiplyTileSIMD2x4(&Result, A, B, TileX, TileY);
+				break;
+			case _2x8:
+				MultiplyTileSIMD2x8(&Result, A, B, TileX, TileY);
+				break;
+			case _1x16:
+				MultiplyTileSIMD1x16(&Result, A, B, TileX, TileY);
+			case _4x4:
+				MultiplyTileSIMD4x4(&Result, A, B, TileX, TileY);
+			}
+		}
+	}
+	for (size_t RowIdx = A->NRows - NLeftoverRows; RowIdx < A->NRows; RowIdx++)
+	{
+		for (size_t TileY = 0; TileY < NTileCols; TileY++)
+		{
+			switch (TileMode)
+			{
+			case _2x4:
+				MultiplyTileSIMD1x4(&Result, A, B, RowIdx, TileY);
+				break;
+			case _2x8:
+				MultiplyTileSIMD1x8(&Result, A, B, RowIdx, TileY);
+				break;
+			case _1x16:
+				break; // we've already done all the rows at this point
+			case _4x4:
+				MultiplyTileSIMD1x4(&Result, A, B, RowIdx, TileY);
+			}
+		}
+	}
+	// Let's forgo SIMD on the last couple of columns because I'm lazy
+	for (size_t RowIdx = 0; RowIdx < A->NRows; RowIdx++)
+	{
+		const double *ARow = A->Data + RowIdx * A->NCols;
+		double *ResultRow = Result.Data + RowIdx * Result.NCols;
+		for (size_t k = 0; k < B->NRows; k++)
+		{
+			const double *BRow = B->Data + k * B->NCols;
+			const double Aik = ARow[k];
+			for (size_t ColIdx = B->NCols - NLeftoverCols; ColIdx < B->NCols; ColIdx++)
+			{
+				ResultRow[ColIdx] += Aik * BRow[ColIdx];
 			}
 		}
 	}
@@ -405,7 +759,30 @@ void test_matrix_multiply(size_t MatrixSize, int PrintResult, int NThreads, bool
 	Result = Matrixf64MultiplyFaster(&A, &B);
 	end = clock();
 	printf("FastER done in %lfs\n", (double)(end - start) / CLOCKS_PER_SEC);
-	// free(Result.Data);
+	free(Result.Data);
+	tile_mode TileMode = _2x8;
+	start = clock();
+	Result = Matrixf64MultiplyFastest(&A, &B, TileMode);
+	end = clock();
+	printf("FastEST 2x8 done in %lfs\n", (double)(end - start) / CLOCKS_PER_SEC);
+	free(Result.Data);
+	TileMode = _2x4;
+	start = clock();
+	Result = Matrixf64MultiplyFastest(&A, &B, TileMode);
+	end = clock();
+	printf("FastEST 2x4 done in %lfs\n", (double)(end - start) / CLOCKS_PER_SEC);
+	free(Result.Data);
+	TileMode = _1x16;
+	start = clock();
+	Result = Matrixf64MultiplyFastest(&A, &B, TileMode);
+	end = clock();
+	printf("FastEST 1x16 done in %lfs\n", (double)(end - start) / CLOCKS_PER_SEC);
+	free(Result.Data);
+	TileMode = _4x4;
+	start = clock();
+	Result = Matrixf64MultiplyFastest(&A, &B, TileMode);
+	end = clock();
+	printf("FastEST 4x4 done in %lfs\n", (double)(end - start) / CLOCKS_PER_SEC);
 	// start = clock();
 	// Result = Matrixf64MultiplyMultithreaded(&A, &B, NThreads);
 	// end = clock();
