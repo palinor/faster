@@ -60,9 +60,9 @@ Matrixf64 Matrixf64MultiplyFaster(const Matrixf64 *A, const Matrixf64 *B)
 	Result.NRows = A->NRows;
 	Result.NCols = B->NCols;
 	Result.Data = calloc(Result.NRows * Result.NCols, sizeof(double));
-	const int BlockSize = 8;
-	const int NBlocks = (int)A->NCols / BlockSize;
-	const int Remainder = (int)A->NCols % BlockSize;
+	const size_t BlockSize = 8;
+	const size_t NBlocks = A->NCols / BlockSize;
+	const size_t Remainder = A->NCols % BlockSize;
 	for (size_t i = 0; i < A->NRows; i++)
 	{
 		const double *ARow = A->Data + i * A->NCols;
@@ -213,7 +213,7 @@ void MultiplyTileSIMD1x8(Matrixf64 *Result, const Matrixf64 *A, const Matrixf64 
 	for (size_t j = 0; j < Result->NRows; j++)
 	{
 		float64x2x4_t BBlocks = vld4q_f64(B->Data + j * B->NCols + ResultColIdx);
-		for (size_t ValIdx = 0; ValIdx < 2; ValIdx++)
+		for (size_t ValIdx = 0; ValIdx < 4; ValIdx++)
 		{
 			ResultRowBlock.val[ValIdx] = vcmlaq_f64(ResultRowBlock.val[ValIdx], ABlocks.val[ValIdx], BBlocks.val[ValIdx]);
 		}
@@ -313,7 +313,7 @@ FastEST 2x4 done in 0.163341s
 FastEST 1x16 done in 0.238220s
 FastEST 4x4 done in 0.086331s
 
-Compare this with a single threaded numpy (OpenBLAS backend) benchmark of 
+Compare this with a single threaded numpy (OpenBLAS backend) benchmark of
 0.042754173278808594s
 
 We're starting to look decent
@@ -350,13 +350,152 @@ void MultiplyTileSIMD4x4(Matrixf64 *Result, const Matrixf64 *A, const Matrixf64 
 	}
 }
 
+void MultiplyTileSIMD4x8(Matrixf64 *Result, const Matrixf64 *A, const Matrixf64 *B, size_t TileX, size_t TileY)
+{
+	size_t TileRows = 4;
+	size_t TileCols = 8;
+	float64x2x4_t ResultRowBlocks[TileRows];
+	float64x2x4_t ABlocks[TileRows];
+	size_t ResultColIdx = TileY * TileCols;
+	for (size_t i = 0; i < TileRows; i++)
+	{
+		size_t ResultRowIdx = TileX * TileRows + i;
+		ResultRowBlocks[i] = vld4q_f64(Result->Data + (ResultRowIdx)*Result->NCols + ResultColIdx);
+		ABlocks[i] = vld4q_f64(A->Data + (ResultRowIdx)*A->NCols + ResultColIdx);
+		for (size_t j = 0; j < Result->NRows; j++)
+		{
+			float64x2x4_t BBlocks = vld4q_f64(B->Data + j * B->NCols + ResultColIdx);
+			for (size_t ValIdx = 0; ValIdx < 4; ValIdx++)
+			{
+				ResultRowBlocks[i].val[ValIdx] = vcmlaq_f64(ResultRowBlocks[i].val[ValIdx], ABlocks[i].val[ValIdx], BBlocks.val[ValIdx]);
+			}
+		}
+		vst4q_f64(Result->Data + ResultRowIdx * Result->NCols + ResultColIdx, ResultRowBlocks[i]);
+	}
+}
+
+/*
+v6
+Now let's actually try using register blocking
+
+1000x100 Benchmark - single run
+
+Debug
+Slow done in 3.448017s
+Fast done in 1.213292s
+FastER done in 2.427642s
+FastEST 2x8 done in 1.874457s
+FastEST 2x4 done in 1.905910s
+FastEST 1x16 done in 1.644576s
+FastEST 4x4 done in 1.543720s
+FastEST 4x8 done in 1.900364s
+MultiplyRegisterBlock 2x4 done in 2.300488s
+MultiplyRegisterBlock 4x2 done in 2.282519s
+MultiplyRegisterBlock 4x4 done in 2.258337s
+
+Release
+Slow done in 0.176373s
+Fast done in 0.157340s
+FastER done in 0.358622s
+FastEST 2x8 done in 0.143927s
+FastEST 2x4 done in 0.172985s
+FastEST 1x16 done in 0.165954s
+FastEST 4x4 done in 0.107556s
+FastEST 4x8 done in 0.182878s
+MultiplyRegisterBlock 2x4 done in 0.275106s
+MultiplyRegisterBlock 4x2 done in 0.318297s
+MultiplyRegisterBlock 4x4 done in 0.250176s
+
+It's better than the naive NEON implementation... But I probably need to optimize the 
+loading pattern for the registers used, which means loading everything in order from A to B
+rather than thinking of it as computing one patch of C at a time.
+*/
+
+void MultiplyRegisterBlocks(Matrixf64 *Result, Matrixf64 *A, Matrixf64 *B, size_t NRegA, size_t NRegB, size_t ARowIdx, size_t BColIdx)
+{
+	float64x2x4_t ResultBlocks[NRegA];
+	float64x2x4_t BBlock;
+	float64x2x4_t ABroadcast;
+	for (size_t i = 0; i < NRegA; i++)
+	{
+		ResultBlocks[i] = vld4q_f64(Result->Data + (ARowIdx + i) * Result->NCols + BColIdx);
+	}
+	for (size_t ARegIdx = 0; ARegIdx < NRegA; ARegIdx++)
+	{
+		for (size_t BRowIdx = 0; BRowIdx < B->NRows; BRowIdx += NRegB)
+		{
+			size_t LastRegister = (BRowIdx + NRegB < B->NRows) ? NRegB : B->NRows - BRowIdx;
+			for (size_t i = 0; i < LastRegister; i++)
+			{
+				size_t AColIdx = BRowIdx + i;
+				BBlock = vld4q_f64(B->Data + (BRowIdx + i) * B->NCols + BColIdx);
+				ABroadcast = vld4q_dup_f64(A->Data + (ARowIdx + ARegIdx) * A->NCols + AColIdx);
+				for (size_t j = 0; j < 4; j++)
+				{
+					ResultBlocks[ARegIdx].val[j] = vcmlaq_f64(ResultBlocks[ARegIdx].val[j], ABroadcast.val[j], BBlock.val[j]);
+				}
+			}
+		}
+	}
+	for (size_t i = 0; i < NRegA; i++)
+	{
+		vst4q_f64(Result->Data + (ARowIdx + i) * Result->NCols + BColIdx, ResultBlocks[i]);
+	}
+}
+
+Matrixf64 Matrixf64MultiplyRegisterBlock(Matrixf64 *A, Matrixf64 *B, size_t NRegA, size_t NRegB)
+{
+	size_t RegSize = 8;
+	assert(A->NCols == B->NRows);
+	Matrixf64 Result;
+	Result.NRows = A->NRows;
+	Result.NCols = B->NCols;
+	Result.Data = calloc(Result.NRows * Result.NCols, sizeof(double));
+	size_t NRegX = A->NRows / NRegA;
+	size_t LeftoverRegX = A->NRows % NRegA;
+	size_t NRegY = B->NCols / RegSize;
+	size_t LeftoverRegY = B->NCols % RegSize;
+	for (size_t RegRowIdx = 0; RegRowIdx < NRegX; RegRowIdx++)
+	{
+		size_t ARow = RegRowIdx * NRegA;
+		for (size_t RegColIdx = 0; RegColIdx < NRegY; RegColIdx++)
+		{
+			size_t BCol = RegColIdx * RegSize;
+			MultiplyRegisterBlocks(&Result, A, B, NRegA, NRegB, ARow, BCol);
+		}
+	}
+
+	for (size_t RowIdx = A->NRows - LeftoverRegX; RowIdx < A->NRows; RowIdx++)
+	{
+		for (size_t ColIdx = 0; ColIdx < B->NCols - LeftoverRegY; ColIdx += 8)
+		{
+			MultiplyTileSIMD1x8(&Result, A, B, RowIdx, ColIdx);
+		}
+	}
+	for (size_t RowIdx = 0; RowIdx < A->NRows; RowIdx++)
+	{
+		const double *ARow = A->Data + RowIdx * A->NCols;
+		double *ResultRow = Result.Data + RowIdx * Result.NCols;
+		for (size_t k = 0; k < B->NRows; k++)
+		{
+			const double *BRow = B->Data + k * B->NCols;
+			const double Aik = ARow[k];
+			for (size_t ColIdx = B->NCols - LeftoverRegY; ColIdx < B->NCols; ColIdx++)
+			{
+				ResultRow[ColIdx] += Aik * BRow[ColIdx];
+			}
+		}
+	}
+	return Result;
+}
 
 typedef enum tile_mode
 {
 	_2x8,
 	_2x4,
 	_1x16,
-	_4x4
+	_4x4,
+	_4x8
 } tile_mode;
 
 Matrixf64 Matrixf64MultiplyFastest(const Matrixf64 *A, const Matrixf64 *B, tile_mode TileMode)
@@ -385,6 +524,10 @@ Matrixf64 Matrixf64MultiplyFastest(const Matrixf64 *A, const Matrixf64 *B, tile_
 		TileRows = 4;
 		TileCols = 4;
 		break;
+	case _4x8:
+		TileRows = 4;
+		TileCols = 8;
+		break;
 	}
 	size_t NTileRows = A->NRows / TileRows;
 	size_t NLeftoverRows = A->NRows % TileRows;
@@ -404,8 +547,12 @@ Matrixf64 Matrixf64MultiplyFastest(const Matrixf64 *A, const Matrixf64 *B, tile_
 				break;
 			case _1x16:
 				MultiplyTileSIMD1x16(&Result, A, B, TileX, TileY);
+				break;
 			case _4x4:
 				MultiplyTileSIMD4x4(&Result, A, B, TileX, TileY);
+				break;
+			case _4x8:
+				MultiplyTileSIMD4x8(&Result, A, B, TileX, TileY);
 			}
 		}
 	}
@@ -425,6 +572,10 @@ Matrixf64 Matrixf64MultiplyFastest(const Matrixf64 *A, const Matrixf64 *B, tile_
 				break; // we've already done all the rows at this point
 			case _4x4:
 				MultiplyTileSIMD1x4(&Result, A, B, RowIdx, TileY);
+				break;
+			case _4x8:
+				MultiplyTileSIMD1x8(&Result, A, B, RowIdx, TileY);
+				break;
 			}
 		}
 	}
@@ -783,6 +934,33 @@ void test_matrix_multiply(size_t MatrixSize, int PrintResult, int NThreads, bool
 	Result = Matrixf64MultiplyFastest(&A, &B, TileMode);
 	end = clock();
 	printf("FastEST 4x4 done in %lfs\n", (double)(end - start) / CLOCKS_PER_SEC);
+	free(Result.Data);
+	TileMode = _4x8;
+	start = clock();
+	Result = Matrixf64MultiplyFastest(&A, &B, TileMode);
+	end = clock();
+	printf("FastEST 4x8 done in %lfs\n", (double)(end - start) / CLOCKS_PER_SEC);
+	free(Result.Data);
+	size_t NRegA = 2, NRegB = 4;
+	start = clock();
+	Result = Matrixf64MultiplyRegisterBlock(&A, &B, NRegA, NRegB);
+	end = clock();
+	printf("MultiplyRegisterBlock 2x4 done in %lfs\n", (double)(end - start) / CLOCKS_PER_SEC);
+	free(Result.Data);
+	NRegA = 4;
+	NRegB = 2;
+	start = clock();
+	Result = Matrixf64MultiplyRegisterBlock(&A, &B, NRegA, NRegB);
+	end = clock();
+	printf("MultiplyRegisterBlock 4x2 done in %lfs\n", (double)(end - start) / CLOCKS_PER_SEC);
+	free(Result.Data);
+	NRegA = 4;
+	NRegB = 4;
+	start = clock();
+	Result = Matrixf64MultiplyRegisterBlock(&A, &B, NRegA, NRegB);
+	end = clock();
+	printf("MultiplyRegisterBlock 4x4 done in %lfs\n", (double)(end - start) / CLOCKS_PER_SEC);
+	free(Result.Data);
 	// start = clock();
 	// Result = Matrixf64MultiplyMultithreaded(&A, &B, NThreads);
 	// end = clock();
