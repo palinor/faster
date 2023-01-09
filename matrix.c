@@ -406,7 +406,7 @@ MultiplyRegisterBlock 2x4 done in 0.275106s
 MultiplyRegisterBlock 4x2 done in 0.318297s
 MultiplyRegisterBlock 4x4 done in 0.250176s
 
-It's better than the naive NEON implementation... But I probably need to optimize the 
+It's better than the naive NEON implementation... But I probably need to optimize the
 loading pattern for the registers used, which means loading everything in order from A to B
 rather than thinking of it as computing one patch of C at a time.
 */
@@ -465,6 +465,139 @@ Matrixf64 Matrixf64MultiplyRegisterBlock(Matrixf64 *A, Matrixf64 *B, size_t NReg
 		}
 	}
 
+	for (size_t RowIdx = A->NRows - LeftoverRegX; RowIdx < A->NRows; RowIdx++)
+	{
+		for (size_t ColIdx = 0; ColIdx < B->NCols - LeftoverRegY; ColIdx += 8)
+		{
+			MultiplyTileSIMD1x8(&Result, A, B, RowIdx, ColIdx);
+		}
+	}
+	for (size_t RowIdx = 0; RowIdx < A->NRows; RowIdx++)
+	{
+		const double *ARow = A->Data + RowIdx * A->NCols;
+		double *ResultRow = Result.Data + RowIdx * Result.NCols;
+		for (size_t k = 0; k < B->NRows; k++)
+		{
+			const double *BRow = B->Data + k * B->NCols;
+			const double Aik = ARow[k];
+			for (size_t ColIdx = B->NCols - LeftoverRegY; ColIdx < B->NCols; ColIdx++)
+			{
+				ResultRow[ColIdx] += Aik * BRow[ColIdx];
+			}
+		}
+	}
+	return Result;
+}
+
+/*
+v7 - Let's actually load in order from A and B and accumulate the results back into C
+
+1000x1000 Benchmarks
+
+Debug
+Slow done in 3.443199s
+Fast done in 1.212221s
+FastER done in 2.425718s
+FastEST 2x8 done in 1.852756s
+FastEST 2x4 done in 1.908038s
+FastEST 1x16 done in 1.655259s
+FastEST 4x4 done in 1.525683s
+FastEST 4x8 done in 1.875789s
+MultiplyRegisterBlock 2x4 done in 2.279805s
+MultiplyRegisterBlock 4x2 done in 2.270494s
+MultiplyRegisterBlock 4x4 done in 2.221423s
+MultiplyAccumulate 4x4 done in 2.026345s
+MultiplyAccumulate 2x4 done in 2.276662s
+MultiplyAccumulate 4x2 done in 2.222507s
+
+Release
+Slow done in 0.174268s
+Fast done in 0.155762s
+FastER done in 0.356256s
+FastEST 2x8 done in 0.129766s
+FastEST 2x4 done in 0.169324s
+FastEST 1x16 done in 0.162491s
+FastEST 4x4 done in 0.100891s
+FastEST 4x8 done in 0.180197s
+MultiplyRegisterBlock 2x4 done in 0.268436s
+MultiplyRegisterBlock 4x2 done in 0.313879s
+MultiplyRegisterBlock 4x4 done in 0.254991s
+MultiplyAccumulate 4x4 done in 0.305603s
+MultiplyAccumulate 2x4 done in 0.397644s
+MultiplyAccumulate 4x2 done in 0.394385s
+
+Nope, this is even worse. Regular SIMD before the broadcasting was pretty good actually.
+*/
+
+void AccumulateRegisterBlocks(Matrixf64 *Result, double **AReg, double **BReg, size_t NRegA, size_t NRegB, size_t ARowIdx, size_t AColIdx, size_t BRowIdx, size_t BColIdx)
+{
+	float64x2x4_t ResultBlocks[NRegA];
+	float64x2x4_t BBlock;
+	float64x2x4_t ABroadcast;
+	for (size_t i = 0; i < NRegA; i++)
+	{
+		ResultBlocks[i] = vld4q_f64(Result->Data + (ARowIdx + i) * Result->NCols + BColIdx);
+	}
+	for (size_t j = 0; j < NRegB; j++)
+	{
+		BBlock = vld4q_f64(BReg[j]);
+		for (size_t i = 0; i < NRegA; i++)
+		{
+			ABroadcast = vld4q_dup_f64(AReg[i] + BRowIdx - AColIdx + j);
+			for (size_t ValIdx = 0; ValIdx < 4; ValIdx++)
+			{
+				ResultBlocks[i].val[ValIdx] = vcmlaq_f64(ResultBlocks[i].val[ValIdx], ABroadcast.val[ValIdx], BBlock.val[ValIdx]);
+			}
+		}
+	}
+	for (size_t i = 0; i < NRegA; i++)
+	{
+		vst4q_f64(Result->Data + (ARowIdx + i) * Result->NCols + BColIdx, ResultBlocks[i]);
+	}
+}
+
+Matrixf64 Matrixf64MultiplyAccumulate(Matrixf64 *A, Matrixf64 *B, size_t NRegA, size_t NRegB)
+{
+	size_t RegSize = 8;
+	assert(A->NCols == B->NRows);
+	Matrixf64 Result;
+	Result.NRows = A->NRows;
+	Result.NCols = B->NCols;
+	Result.Data = calloc(Result.NRows * Result.NCols, sizeof(double));
+	size_t NRegX = A->NRows / NRegA;
+	size_t ANRegCols = A->NCols / RegSize;
+	size_t BNRowBlocks = RegSize / NRegB;
+	size_t LeftoverRegX = A->NRows % NRegA;
+	size_t NRegY = B->NCols / RegSize;
+	size_t LeftoverRegY = B->NCols % RegSize;
+	double *AReg[NRegA];
+	double *BReg[NRegB];
+
+	for (size_t ARegYIdx = 0; ARegYIdx < ANRegCols; ARegYIdx++)
+	{
+		size_t AColIdx = ARegYIdx * RegSize;
+		for (size_t ARegBlock = 0; ARegBlock < NRegX; ARegBlock++)
+		{
+			size_t ARowIdx = ARegBlock * NRegA;
+			for (size_t i = 0; i < NRegA; i++)
+			{
+				AReg[i] = A->Data + (ARowIdx + i) * A->NCols + AColIdx;
+			}
+			for (size_t BBlockRowIdx = 0; BBlockRowIdx < BNRowBlocks; BBlockRowIdx++)
+			{
+				size_t BRowIdx = AColIdx + BBlockRowIdx * NRegB;
+				for (size_t BRegBlock = 0; BRegBlock < NRegY; BRegBlock++)
+				{
+					size_t BColIdx = BRegBlock * RegSize;
+					for (size_t i = 0; i < NRegB; i++)
+					{
+						BReg[i] = B->Data + (BRowIdx + i) * B->NCols + BColIdx;
+					}
+					AccumulateRegisterBlocks(&Result, AReg, BReg, NRegA, NRegB, ARowIdx, AColIdx, BRowIdx, BColIdx);
+				}
+			}
+		}
+	}
 	for (size_t RowIdx = A->NRows - LeftoverRegX; RowIdx < A->NRows; RowIdx++)
 	{
 		for (size_t ColIdx = 0; ColIdx < B->NCols - LeftoverRegY; ColIdx += 8)
@@ -961,7 +1094,25 @@ void test_matrix_multiply(size_t MatrixSize, int PrintResult, int NThreads, bool
 	end = clock();
 	printf("MultiplyRegisterBlock 4x4 done in %lfs\n", (double)(end - start) / CLOCKS_PER_SEC);
 	free(Result.Data);
+	start = clock();
+	Result = Matrixf64MultiplyAccumulate(&A, &B, NRegA, NRegB);
+	end = clock();
+	printf("MultiplyAccumulate 4x4 done in %lfs\n", (double)(end - start) / CLOCKS_PER_SEC);
 	// start = clock();
+	free(Result.Data);
+	NRegA = 2;
+	NRegB = 4;
+	start = clock();
+	Result = Matrixf64MultiplyAccumulate(&A, &B, NRegA, NRegB);
+	end = clock();
+	printf("MultiplyAccumulate 2x4 done in %lfs\n", (double)(end - start) / CLOCKS_PER_SEC);
+	free(Result.Data);
+	NRegA = 4;
+	NRegB = 2;
+	start = clock();
+	Result = Matrixf64MultiplyAccumulate(&A, &B, NRegA, NRegB);
+	end = clock();
+	printf("MultiplyAccumulate 4x2 done in %lfs\n", (double)(end - start) / CLOCKS_PER_SEC);
 	// Result = Matrixf64MultiplyMultithreaded(&A, &B, NThreads);
 	// end = clock();
 	// printf("Multithreaded done in %lfs with %d threads\n", (double)(end - start) / CLOCKS_PER_SEC, NThreads);
