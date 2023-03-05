@@ -10,6 +10,7 @@
 #include <time.h>
 
 #define abs(x) ((x) > 0) ? (x) : -(x)
+#define MATRIXITEM(a, i, j) ((a)->contents[(i) * (a)->ld + (j)])
 
 typedef struct matrix_f32
 {
@@ -19,14 +20,62 @@ typedef struct matrix_f32
 	size_t ld;
 } matrix_f32;
 
+
+matrix_f32 Matrixf32Copy(matrix_f32 *a) {
+	matrix_f32 result;
+	result.rows = a->rows;
+	result.cols = a->cols;
+	result.ld = a->ld;
+	result.contents = malloc(a->rows * a->cols * sizeof(float));
+	for (size_t i = 0; i < a->rows; i++) {
+		for (size_t j = 0; j < a->cols; j++) {
+			MATRIXITEM(&result, i, j) = MATRIXITEM(a, i, j);
+		}
+	}
+	return result;
+}
+
 float MatrixGetItem(matrix_f32 *a, size_t i, size_t j)
 {
 	return a->contents[i * a->ld + j];
 }
 
+void MatrixPutItem(matrix_f32 *a, size_t i, size_t j, float x) {
+	a->contents[i * a->ld + j] = x;
+}
+
 float *MatrixGetAddr(const matrix_f32 *a, size_t i, size_t j)
 {
 	return a->contents + i * a->ld + j;
+}
+
+
+void PrintMatrix(matrix_f32 *result)
+{
+	for (size_t i = 0; i < result->rows; i++)
+	{
+		for (size_t j = 0; j < result->cols; j++)
+		{
+			printf("%f ", MatrixGetItem(result, i, j));
+		}
+		printf("\n");
+	}
+}
+
+double GetMaxError(matrix_f32 *a, matrix_f32 *b)
+{
+	assert(a->rows == b->rows);
+	assert(a->cols == b->cols);
+	float maxError = 0;
+	for (size_t i = 0; i < a->rows; i++)
+	{
+		for (size_t j = 0; j < a->cols; j++)
+		{
+			float thisError = abs(MatrixGetItem(a, i, j) - MatrixGetItem(b, i, j));
+			maxError = (thisError > maxError) ? thisError : maxError;
+		}
+	}
+	return maxError;
 }
 
 matrix_f32 Matrixf32Multiply(const matrix_f32 *a, const matrix_f32 *b)

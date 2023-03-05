@@ -4,7 +4,7 @@
 #define GET_BIT(x, i) (((x) >> (i)) & 1)
 #define PRINT_RES(func, ...) ((printf("Input : %f, Output: %f\n", (__VA_ARGS__), (func)(__VA_ARGS__))))
 
-float f_sqrt(float x) {
+float FSqrt(float x) {
 	float errorTol = 1e-8;
 	int maxIter = 1000;
 	int nIter = 0;
@@ -24,7 +24,7 @@ float f_sqrt(float x) {
 	return result;
 }
 
-float f_pow(float base, int exponent) {
+float FPow(float base, int exponent) {
 	float result = 1;
 	float current_square_value = base;
 	for (size_t i = 0; i < sizeof(int); i++) {

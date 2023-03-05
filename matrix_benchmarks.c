@@ -24,22 +24,6 @@ typedef struct benchmark_results
 	matrix_f32 result;
 } benchmark_results;
 
-double GetMaxError(matrix_f32 *a, matrix_f32 *b)
-{
-	assert(a->rows == b->rows);
-	assert(a->cols == b->cols);
-	float maxError = 0;
-	for (size_t i = 0; i < a->rows; i++)
-	{
-		for (size_t j = 0; j < a->cols; j++)
-		{
-			float thisError = abs(MatrixGetItem(a, i, j) - MatrixGetItem(b, i, j));
-			maxError = (thisError > maxError) ? thisError : maxError;
-		}
-	}
-	return maxError;
-}
-
 double GFlops(benchmark_results benchmark)
 {
 	return benchmark.i * benchmark.j * benchmark.k * 2e-9 / benchmark.time;
@@ -103,18 +87,6 @@ benchmark_results TestOnes(size_t size_i, size_t size_j, size_t size_k, matrix_f
 	averageResult.time /= (double)nTrials;
 
 	return averageResult;
-}
-
-void PrintResult(matrix_f32 *result)
-{
-	for (size_t i = 0; i < result->rows; i++)
-	{
-		for (size_t j = 0; j < result->cols; j++)
-		{
-			printf("%f ", MatrixGetItem(result, i, j));
-		}
-		printf("\n");
-	}
 }
 
 int main()

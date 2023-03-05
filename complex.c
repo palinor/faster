@@ -1,6 +1,5 @@
 #include "basic_math.c"
 
-
 typedef struct c_float {
 	float re;
 	float im;
@@ -43,13 +42,13 @@ inline float module(c_float z) {
 	return f_sqrt(z.re * z.re + z.im + z.im);
 }
 
-inline c_float comp(c_float z) {
+inline c_float conj(c_float z) {
 	c_float res;
 	res.re = z.re;
 	res.im = - z.im;
 }
  
 inline c_float div(c_float x, c_float y) {
-	c_float z = div(mul(x, comp(y)), inject(module2(y)));
+	c_float z = div(mul(x, conj(y)), inject(module2(y)));
 	return z;
 }

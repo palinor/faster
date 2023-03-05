@@ -1,13 +1,14 @@
 #include <stdarg.h>
 #include "basic_math.c"
+#include "linalg.c"
 
-int log_error(float expected_output, float output, float *inputs, size_t n_inputs)
+int LogErrorExact(float expectedOutput, float output, float *inputs, size_t nInputs)
 {
-	int error = !(ABS(expected_output - output) < 1e-8);
+	int error = !(ABS(expectedOutput - output) < 1e-8);
 	if (error)
 	{
-		printf("Expected %lf, got %lf for inputs", expected_output, output);
-		for (size_t i = 0; i < n_inputs; i++)
+		printf("Expected %lf, got %lf for inputs", expectedOutput, output);
+		for (size_t i = 0; i < nInputs; i++)
 		{
 			printf(", %lf", inputs[i]);
 		}
@@ -16,63 +17,112 @@ int log_error(float expected_output, float output, float *inputs, size_t n_input
 	return error;
 }
 
-void run_test_function(int test_f(void), char *f_name)
+int LogErrorLeq(float expectedOutput, float output, float errorTol, float *inputs, size_t nInputs) {
+	float absError = ABS(expectedOutput - output);
+	int error = !(absError < errorTol);
+	if (error)
+	{
+		printf("Expected diff of %lf and %lf to be under %lf, got %lf for inputs", output, expectedOutput, errorTol, absError);
+		for (size_t i = 0; i < nInputs; i++) {
+			printf(", %lf", inputs[i]);
+		}
+		printf("\n");
+	}
+	return error;
+}
+
+void RunTestFunction(int testF(void), char *fName)
 
 {
-	int n_errors = test_f();
-	if (n_errors == 0)
+	int nErrors = testF();
+	if (nErrors == 0)
 	{
-		printf("%s passed\n", f_name);
+		printf("%s passed\n", fName);
 	} else
 	{
-		printf("%s failed with %d errors\n", f_name, n_errors);
+		printf("%s failed with %d errors\n", fName, nErrors);
 	}
 	printf("\n============\n");
 
 }
 
-int test_f_sqrt()
+int TestFSqrt()
 {
 	float inputs[] = {1, 0.001, 4, 100};
-	float expected_outputs[] = {1, 0.0316227749, 2, 10};
-	printf("Testing f_sqrt\n");
+	float expectedOutputs[] = {1, 0.0316227749, 2, 10};
+	printf("Testing FSqrt\n");
 	int n_errors = 0;
 	for (size_t i = 0; i < 4; i++)
 	{
-		float res = f_sqrt(inputs[i]);
-		n_errors += log_error(expected_outputs[i], res, inputs + i, 1);
+		float res = FSqrt(inputs[i]);
+		n_errors += LogErrorExact(expectedOutputs[i], res, inputs + i, 1);
 	}
 	return n_errors;
 }
 
-int test_f_pow()
+int TestFPow()
 {
-	printf("Testing f_pow\n");
-	float base_inputs[] = {1, 10, 0.1, 3};
-	int exp_inputs[] = {0, 1, 2, 5};
-	float expected_res[16] = {
+	printf("Testing FPow\n");
+	float baseInputs[] = {1, 10, 0.1, 3};
+	int expInputs[] = {0, 1, 2, 5};
+	float expectedRes[16] = {
 		1, 1, 1, 1,
 		1, 10, 100, 100000,
 		1, 0.1, 0.01, 0.00001,
 		1, 3, 9, 243
 	};
-	int n_errors = 0;
+	int nErrors = 0;
 	for (size_t i = 0; i < 4; i++)
 	{
-		float base = base_inputs[i];
+		float base = baseInputs[i];
 		for (size_t j = 0; j < 4; j++)
 		{
-			float exp = exp_inputs[j];
+			float exp = expInputs[j];
 			float inputs[2] = {base, exp};
-			float expected = expected_res[4 * i + j];
-			n_errors += log_error(expected, f_pow(base, exp), inputs, 2);
+			float expected = expectedRes[4 * i + j];
+			nErrors += LogErrorExact(expected, FPow(base, exp), inputs, 2);
 		}
 	}
-	return n_errors;
+	return nErrors;
+}
+
+void TestSwap() {
+	float a = 5;
+	float b = 6;
+	swap(&a, &b);
+	printf("a: %f, b: %f", a, b);
+}
+
+int TestGaussJordan() {
+	printf("Testing GaussJordan \n");
+	int nErrors = 0;
+	size_t rowCases[4] = {8, 32, 128, 256};
+	for (size_t testCase = 0; testCase < 4; testCase++) {
+		size_t rows = rowCases[testCase];
+		printf("Size %d\n", (int)rows);
+		matrix_f32 id = Identityf32(rows);
+		matrix_f32 a = RandomMatrixf32(rows, rows);
+		matrix_f32 aInv = Matrixf32Copy(&a);
+		int error = GaussJordan(&aInv, NULL);
+		matrix_f32 result = Matrixf32Multiply(&a, &aInv);
+		float maxError = GetMaxError(&id, &result);
+		float relErrorTol = 1e-6;
+		float errorTol = ((float)rows) * relErrorTol;
+		int doesNotPass = LogErrorLeq(0, maxError, errorTol, 0, 0);
+		if (!doesNotPass) printf("Ok at %f\n", relErrorTol);
+		nErrors += doesNotPass;
+		if (rows < 10) {
+			printf("Result: \n");
+			PrintMatrix(&result);
+		}
+	}
+	return nErrors;
 }
 
 int main()
 {
-	run_test_function(test_f_sqrt, "f_sqrt");
-	run_test_function(test_f_pow, "f_pow");
+	RunTestFunction(TestFSqrt, "FSqrt");
+	RunTestFunction(TestFPow, "FPow");
+	RunTestFunction(TestGaussJordan, "GaussJordan");
+
 }
