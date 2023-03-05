@@ -16,7 +16,7 @@
 				"-Wextra",
 				"-pedantic",
 				"-DEBUG",
-				"-pthread"
+				// "-pthread"
 			],
 			"options": {
 				"cwd": "${fileDirname}"
@@ -38,8 +38,8 @@
 				"${fileDirname}/${fileBasenameNoExtension}",
 				"-g",
 				"-Ofast",
-				"-Rpass=loop-vectorize",
-				"-pthread"
+				// "-Rpass=loop-vectorize",
+				// "-pthread"
 			],
 			"options": {
 				"cwd": "${fileDirname}"
@@ -49,6 +49,17 @@
 			],
 			"group": "build",
 			"detail": "compiler: /usr/bin/clang"
+		},
+
+		{
+			"type": "process",
+			"label": "Clang build and run release",
+			"command": "./${fileBasenameNoExtension}",
+			"options": {
+				"cwd": "${fileDirname}"
+			},
+			"group": "build",
+			"dependsOn": ["Clang build release"],
 		}
 	]
 }

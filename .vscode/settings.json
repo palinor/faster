@@ -6,6 +6,9 @@
 	"C_Cpp.intelliSenseEngineFallback": "disabled",
 	"C_Cpp.intelliSenseEngine": "default",
 	"files.associations": {
-		"arm_neon.h": "c"
-	}
+		"arm_neon.h": "c",
+		"math.h": "c"
+	},
+	"C_Cpp.vcFormat.newLine.beforeElse": false,
+	"C_Cpp.formatting": "vcFormat"
 }
