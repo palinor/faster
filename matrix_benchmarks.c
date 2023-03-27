@@ -50,7 +50,7 @@ benchmark_results TestRandom(size_t size_i, size_t size_j, size_t size_k, matrix
 	averageResult.k = a.cols;
 	for (int trial = 0; trial < nTrials; trial++)
 	{
-		matrix_f32 targetResult = Matrixf32Multiply(&a, &b);
+		matrix_f32 targetResult = Multiply(&a, &b);
 		struct timespec startTime = GetTime();
 		matrix_f32 testResult = testFunction(&a, &b);
 		struct timespec endTime = GetTime();
@@ -78,7 +78,7 @@ benchmark_results TestOnes(size_t size_i, size_t size_j, size_t size_k, matrix_f
 		struct timespec startTime = GetTime();
 		matrix_f32 testResult = testFunction(&a, &b);
 		struct timespec endTime = GetTime();
-		matrix_f32 targetResult = Matrixf32Multiply(&a, &b);
+		matrix_f32 targetResult = Multiply(&a, &b);
 		float maxError = GetMaxError(&testResult, &targetResult);
 		averageResult.time += TimeDiffInSeconds(startTime, endTime);
 		averageResult.max_error = maxError;

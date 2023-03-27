@@ -1,6 +1,6 @@
 #include <stdio.h>
+#include "linalg.c"
 
-#define ABS(x) ((x) > 0 ? (x) : (-(x)))
 #define GET_BIT(x, i) (((x) >> (i)) & 1)
 #define PRINT_RES(func, ...) ((printf("Input : %f, Output: %f\n", (__VA_ARGS__), (func)(__VA_ARGS__))))
 
@@ -34,4 +34,8 @@ float FPow(float base, int exponent) {
 		current_square_value *= current_square_value;
 	}
 	return result;
+}
+
+float Exp(float exponent) {
+	return 1.0;
 }

@@ -1,6 +1,5 @@
 #include <arm_neon.h>
 #include <assert.h>
-#include <math.h>
 #include <unistd.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -9,8 +8,11 @@
 #include <sys/stat.h>
 #include <time.h>
 
-#define abs(x) ((x) > 0) ? (x) : -(x)
-#define MATRIXITEM(a, i, j) ((a)->contents[(i) * (a)->ld + (j)])
+#define ABS(x) (((x) > 0) ? (x) : -(x))
+#define MAX_FLOAT 1e20
+#define MIN_FLOAT 1e-12
+#define MATRIX_ITEM(a, i, j) ((a)->contents[(i) * (a)->ld + (j)])
+#define SIGN(x) (((x) > 0) ? 1 : -1)
 
 typedef struct matrix_f32
 {
@@ -20,8 +22,12 @@ typedef struct matrix_f32
 	size_t ld;
 } matrix_f32;
 
+void Free(matrix_f32 *a) {
+	free(a->contents);
+}
 
-matrix_f32 Matrixf32Copy(matrix_f32 *a) {
+
+matrix_f32 Copy(matrix_f32 *a) {
 	matrix_f32 result;
 	result.rows = a->rows;
 	result.cols = a->cols;
@@ -29,7 +35,7 @@ matrix_f32 Matrixf32Copy(matrix_f32 *a) {
 	result.contents = malloc(a->rows * a->cols * sizeof(float));
 	for (size_t i = 0; i < a->rows; i++) {
 		for (size_t j = 0; j < a->cols; j++) {
-			MATRIXITEM(&result, i, j) = MATRIXITEM(a, i, j);
+			MATRIX_ITEM(&result, i, j) = MATRIX_ITEM(a, i, j);
 		}
 	}
 	return result;
@@ -71,14 +77,17 @@ double GetMaxError(matrix_f32 *a, matrix_f32 *b)
 	{
 		for (size_t j = 0; j < a->cols; j++)
 		{
-			float thisError = abs(MatrixGetItem(a, i, j) - MatrixGetItem(b, i, j));
+			float thisError = ABS(MatrixGetItem(a, i, j) - MatrixGetItem(b, i, j));
+			if (!(thisError < MAX_FLOAT)) {
+				return MAX_FLOAT; // handle NaN
+			}
 			maxError = (thisError > maxError) ? thisError : maxError;
 		}
 	}
 	return maxError;
 }
 
-matrix_f32 Matrixf32Multiply(const matrix_f32 *a, const matrix_f32 *b)
+matrix_f32 Multiply(const matrix_f32 *a, const matrix_f32 *b)
 {
 	assert(a->cols == b->rows);
 	matrix_f32 result;
@@ -104,6 +113,33 @@ matrix_f32 Matrixf32Multiply(const matrix_f32 *a, const matrix_f32 *b)
 				*/
 				// resultRow[j] = fma(bRow[j], Aik, resultRow[j]);
 			}
+		}
+	}
+	return result;
+}
+
+/*
+Multiply inplace by a scalar
+*/
+void MultiplyInplace(matrix_f32 *a, float x) {
+	for (size_t i = 0; i < a->rows; i++) {
+		for (size_t j = 0; j < a->cols; j++) {
+			MATRIX_ITEM(a, i, j) *= x;
+		}
+	}
+}
+
+matrix_f32 Sum(matrix_f32 *a, matrix_f32 *b) {
+	assert(a->rows == b->rows);
+	assert(a->cols == b->cols);
+	matrix_f32 result;
+	result.rows = a->rows;
+	result.cols = b->cols;
+	result.ld = result.cols;
+	result.contents = malloc(a->rows * a->cols * sizeof(float));
+	for (size_t i = 0; i < result.rows; i++) {
+		for (size_t j = 0; j < result.cols; j++) {
+			result.contents[i * result.ld + j] = MATRIX_ITEM(a, i, j) + MATRIX_ITEM(b, i, j);
 		}
 	}
 	return result;
@@ -144,14 +180,14 @@ matrix_f32 Onesf32(size_t rows, size_t cols)
 	return result;
 }
 
-matrix_f32 Identityf32(size_t rows)
+matrix_f32 Identityf32(size_t n)
 {
 	matrix_f32 result;
-	result.rows = rows;
-	result.cols = rows;
-	result.ld = rows;
-	result.contents = calloc(rows * rows, sizeof(float));
-	for (size_t i = 0; i < rows; i++)
+	result.rows = n;
+	result.cols = n;
+	result.ld = n;
+	result.contents = calloc(n * n, sizeof(float));
+	for (size_t i = 0; i < n; i++)
 	{
 		result.contents[i * result.ld + i] = 1;
 	}
@@ -159,7 +195,41 @@ matrix_f32 Identityf32(size_t rows)
 }
 
 /*
-Main block - compute the result in blocks of isze kernelHeight x (4 * kernelWidth)
+Returns an upper triangular matrix with random non-zero elements
+*/
+matrix_f32 UpperRandomf32(size_t n) {
+	matrix_f32 result;
+	result.rows = n;
+	result.cols = n;
+	result.ld = n;
+	result.contents = calloc(n * n, sizeof(float));
+	for (size_t i = 0; i < n; i++) {
+		for (size_t j = i; j < n; j++) {
+			result.contents[i * result.ld + j] = 100 * ((float)rand()) / RAND_MAX;
+		}
+	}
+	return result;
+}
+
+/*
+Returns an lower triangular matrix with random non-zero elements
+*/
+matrix_f32 LowerRandomf32(size_t n) {
+	matrix_f32 result;
+	result.rows = n;
+	result.cols = n;
+	result.ld = n;
+	result.contents = calloc(n * n, sizeof(float));
+	for (size_t i = 0; i < n; i++) {
+		for (size_t j = i + 1; j > 0; j--) { // stupid trick because j is an unsigned int
+			MATRIX_ITEM(&result, i, j - 1) = 100 * ((float)rand()) / RAND_MAX;
+		}
+	}
+	return result;
+}
+
+/*
+Internal block for matrix multiplication - compute the result in blocks of isze kernelHeight x (4 * kernelWidth)
 */
 void Microkernel(const matrix_f32 *a, const matrix_f32 *b, matrix_f32 *result, size_t resultRow, size_t resultCol, size_t kernelHeight, size_t kernelWidth)
 {

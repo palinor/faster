@@ -27,6 +27,33 @@
 			"group": "build",
 			"detail": "compiler: /usr/bin/clang"
 		},
+
+		{
+			"type": "cppbuild",
+			"label": "Clang build tests debug",
+			"command": "/usr/bin/clang",
+			"args": [
+				"-fcolor-diagnostics",
+				"-fansi-escape-codes",
+				"-g",
+				"tests.c",
+				"-o",
+				"${fileDirname}/tests",
+				"-Wall",
+				"-Wextra",
+				"-pedantic",
+				"-DEBUG",
+				// "-pthread"
+			],
+			"options": {
+				"cwd": "${fileDirname}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build",
+			"detail": "compiler: /usr/bin/clang"
+		},
 		
 		{
 			"type": "cppbuild",
@@ -52,6 +79,88 @@
 		},
 
 		{
+			"type": "cppbuild",
+			"label": "Clang build tests release fast",
+			"command": "/usr/bin/clang",
+			"args": [
+				"tests.c",
+				"-o",
+				"${fileDirname}/tests",
+				"-g",
+				"-Ofast",
+			],
+			"options": {
+				"cwd": "${fileDirname}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build",
+			"detail": "compiler: /usr/bin/clang"
+		},
+
+		{
+			"type": "cppbuild",
+			"label": "Clang build tests release O3",
+			"command": "/usr/bin/clang",
+			"args": [
+				"tests.c",
+				"-o",
+				"${fileDirname}/tests",
+				"-g",
+				"-O3",
+			],
+			"options": {
+				"cwd": "${fileDirname}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build",
+			"detail": "compiler: /usr/bin/clang"
+		},
+
+		{
+			"type": "cppbuild",
+			"label": "Clang build shared object",
+			"command": "/usr/bin/clang",
+			"args": [
+				"-fPIC",
+				"-c",
+				"${file}"
+			],
+			"options": {
+				"cwd": "${fileDirname}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build",
+			"detail": "compiler: /usr/bin/clang"
+		},
+
+		{
+			"type": "cppbuild",
+			"label": "Clang build library",
+			"command": "/usr/bin/clang",
+			"args": [
+				"-shared",
+				"-o",
+				"lib${fileBasenameNoExtension}.dylib",
+				"${fileBasenameNoExtension}.o"
+			],
+			"options": {
+				"cwd": "${fileDirname}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build",
+			"detail": "compiler: /usr/bin/clang",
+			"dependsOn": ["Clang build shared object"]
+		},
+
+		{
 			"type": "process",
 			"label": "Clang build and run release",
 			"command": "./${fileBasenameNoExtension}",
@@ -60,6 +169,28 @@
 			},
 			"group": "build",
 			"dependsOn": ["Clang build release"],
+		},
+
+		{
+			"type": "process",
+			"label": "Clang build and run test release O3",
+			"command": "./${fileBasenameNoExtension}",
+			"options": {
+				"cwd": "${fileDirname}"
+			},
+			"group": "build",
+			"dependsOn": ["Clang build test release O3"],
+		},
+
+		{
+			"type": "process",
+			"label": "Clang build and run tests release fast",
+			"command": "./tests",
+			"options": {
+				"cwd": "${fileDirname}"
+			},
+			"group": "build",
+			"dependsOn": ["Clang build tests release fast"],
 		}
 	]
 }

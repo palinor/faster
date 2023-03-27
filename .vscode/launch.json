@@ -13,6 +13,15 @@
 			//"targetArchitecture": "ARM64",
 			//"stopAtEntry": false
 		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug tests",
+			"program": "${workspaceFolder}/tests",
+			"args": [],
+			"cwd": "${workspaceFolder}",
+			"preLaunchTask": "Clang build tests debug",
+		},
 
 		{
 			"type": "lldb",
