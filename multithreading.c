@@ -1,12 +1,14 @@
 #include <fcntl.h>
-#include <pthread.h>
-#include <unistd.h>
-#include <semaphore.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+
+#ifdef __APPLE__
+#include <pthread.h>
+#include <unistd.h>
+#include <semaphore.h>
 
 static pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
 static const char *semaphore_name = "queue_semaphore";
@@ -131,3 +133,4 @@ int main()
 
 	return 0;
 }
+#endif

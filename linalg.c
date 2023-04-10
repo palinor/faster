@@ -1,6 +1,9 @@
+#pragma once
+#include <assert.h>
 #include <stdio.h>
-#include "matrix.c"
-
+#include <stdlib.h>
+#include "linalg.h"
+#include "matrix.h"
 
 void Swap(float *a, float *b) {
 	float temp = *a;
@@ -18,13 +21,17 @@ than in the book (we just have one block of memory, not an array of pointers)
 int GaussJordan(matrix_f32 *a, matrix_f32 *b) {
 	assert(a->cols == a->rows);
 	size_t n = a->rows;
-	int icol = 0, irow = 0;
+	size_t icol = 0, irow = 0;
 	float big = 0, pivinv = 0;
 	//todo(AION) : for now we malloc everything, we can come back
 	// and write another function to heap allocate for small n (don't know if this is easy/possible in C)
-	int *indxc = malloc(n * sizeof(int));
-	int *indxr = malloc(n * sizeof(int));
-	int *ipiv = calloc(n, sizeof(int));
+	size_t *indxc = malloc(n * sizeof(size_t));
+	size_t *indxr = malloc(n * sizeof(size_t));
+	size_t *ipiv = calloc(n, sizeof(size_t));
+	if (!(!!(indxc) * !!(indxr) * !!(ipiv))) {
+		perror("Error allocating memory for GausJordan");
+		exit(1);
+	}
 	for (size_t i = 0; i < n; i++) {
 		big = 0;
 		for (size_t j = 0; j < n; j++) {
@@ -111,6 +118,10 @@ int LUFactorize(matrix_f32 *a, size_t *index) {
 	assert(a->cols == a->rows);
 	size_t n = a->cols;
 	float *scaling_values = malloc(n * sizeof(float));  // what we scaled each row by (1 / pivot)
+	if (!scaling_values) {
+		perror("Error allocating scaling_values in LUFactorize");
+		exit(1);
+	}
 	size_t imax = 0;  // row where we found the latest pivot element
 	float temp;  // placeholder for possible max values
 	for (size_t i = 0; i < n; i++) {
@@ -143,7 +154,6 @@ int LUFactorize(matrix_f32 *a, size_t *index) {
 			}
 			MATRIX_ITEM(a, i, j) = sum;
 
-			float temp;
 			if ((temp = scaling_values[i] * ABS(sum)) >= largest_element) {
 				largest_element = temp;
 				imax = i;

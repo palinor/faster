@@ -1,3 +1,4 @@
+#ifdef __APPLE__
 #include <arm_neon.h>
 #include <assert.h>
 #include <pthread.h>
@@ -1155,3 +1156,4 @@ int main()
 	test_matrix_multiply(64, 0, 2, 0);
 	return 0;
 }
+#endif

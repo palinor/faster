@@ -1,5 +1,8 @@
+#pragma once
 #include <stdarg.h>
-#include "basic_math.c"
+#include <stdlib.h>
+#include "basic_math.h"
+#include "linalg.h"
 
 int LogErrorExact(float expectedOutput, float output, float *inputs, size_t nInputs)
 {
@@ -48,7 +51,7 @@ void RunTestFunction(int testF(void), char *fName)
 int TestFSqrt()
 {
 	float inputs[] = {1, 0.001, 4, 100};
-	float expectedOutputs[] = {1, 0.0316227749, 2, 10};
+	float expectedOutputs[] = {1, 0.0316227749, 2.0, 10};
 	printf("Testing FSqrt\n");
 	int n_errors = 0;
 	for (size_t i = 0; i < 4; i++)
@@ -101,9 +104,9 @@ int TestGaussJordan() {
 		printf("Size %d\n", (int)rows);
 		matrix_f32 id = Identityf32(rows);
 		matrix_f32 a = RandomMatrixf32(rows, rows);
-		matrix_f32 aInv = Copy(&a);
+		matrix_f32 aInv = Matrixf32Copy(&a);
 		GaussJordan(&aInv, NULL);
-		matrix_f32 result = MatrixMicrokernelMultiply(&a, &aInv);
+		matrix_f32 result = Matrixf32MicrokernelMultiply(&a, &aInv, 4, 4);
 		float maxError = GetMaxError(&id, &result);
 		float relErrorTol = 1e-6;
 		float errorTol = ((float)rows) * relErrorTol;
@@ -112,7 +115,7 @@ int TestGaussJordan() {
 		nErrors += doesNotPass;
 		if (rows < 10) {
 			printf("Result: \n");
-			PrintMatrix(&result);
+			PrintMatrixf32(&result);
 		}
 	}
 	return nErrors;
@@ -126,13 +129,13 @@ int TestLU() {
 		size_t rows = rowCases[testCase];
 		printf("Size %d\n", (int)rows);
 		matrix_f32 id = Identityf32(rows);
-		matrix_f32 idCopy = Copy(&id);
+		matrix_f32 idCopy = Matrixf32Copy(&id);
 		matrix_f32 a = RandomMatrixf32(rows, rows);
-		matrix_f32 aLU = Copy(&a);
+		matrix_f32 aLU = Matrixf32Copy(&a);
 		LUFactorize(&aLU, 0);
 		LUBackSub(&aLU, &id);
 		// At this point our "id" matrix should be replaced with the inverse of A
-		matrix_f32 result = Multiply(&a, &id);
+		matrix_f32 result = Matrixf32Multiply(&a, &id);
 		float relErrorTol = 1e-6;
 		float errorTol = ((float)rows) * relErrorTol;
 		float maxError = GetMaxError(&result, &idCopy);
@@ -141,7 +144,7 @@ int TestLU() {
 		nErrors += doesNotPass;
 		if (rows < 10) {
 			printf("Result: \n");
-			PrintMatrix(&result);
+			PrintMatrixf32(&result);
 		}
 	}
 	return nErrors;
@@ -175,9 +178,13 @@ int TestLUFactorize() {
 		MATRIX_ITEM(&l, i, i) = 1;  // Enforce L to be unitary for solution uniqueness
 	}
 	matrix_f32 u = UpperRandomf32(n);
-	matrix_f32 a = Multiply(&l, &u);
-	matrix_f32 aCopy = Copy(&a);
+	matrix_f32 a = Matrixf32Multiply(&l, &u);
+	matrix_f32 aCopy = Matrixf32Copy(&a);
 	size_t *index = malloc(n * sizeof(size_t));
+	if (!index) {
+		perror("Error allocating index in TestLUFactorize");
+		exit(1);
+	}
 	LUFactorize(&a, index);
 	MatrixLUPopulate(&a, &l, &u);
 	for (size_t i = 0; i < n; i++) {
@@ -185,7 +192,7 @@ int TestLUFactorize() {
 			Swap(MatrixGetAddr(&aCopy, index[i], j), MatrixGetAddr(&aCopy, i, j));
 		}
 	}
-	matrix_f32 result = Multiply(&l, &u);
+	matrix_f32 result = Matrixf32Multiply(&l, &u);
 	float relErrorTol = 1e-8;
 	float errorTol = ((float)n) * relErrorTol;
 	float maxError = GetMaxError(&aCopy, &result);
@@ -194,20 +201,22 @@ int TestLUFactorize() {
 		nErrors += doesNotPass;
 		if (n < 10) {
 			printf("Result: \n");
-			MultiplyInplace(&aCopy, -1);
-			matrix_f32 error = Sum(&aCopy, &result);
-			PrintMatrix(&error);
+			Matrixf32MultiplyInplace(&aCopy, -1);
+			matrix_f32 error = Matrixf32Sum(&aCopy, &result);
+			PrintMatrixf32(&error);
 		}
 	return nErrors;
 }
 
 
-int main()
+int TestsMain()
 {
 	RunTestFunction(TestFSqrt, "FSqrt");
 	RunTestFunction(TestFPow, "FPow");
 	RunTestFunction(TestGaussJordan, "GaussJordan");
 	RunTestFunction(TestLUFactorize, "LU Factorize");
 	// RunTestFunction(TestLU, "LUFactorize + LUBackSub");
-
+	return 0;
 }
+
+
