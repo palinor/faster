@@ -7,12 +7,16 @@
 
 #include <assert.h>
 #include <math.h>
+#include <omp.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <vector>
+
 #include "matrix.h"
+#include "savinethreadpool.h"
 
 
 void FreeMatrixf32(matrix_f32 *a) {
@@ -25,7 +29,7 @@ matrix_f32 Matrixf32Copy(matrix_f32 *a) {
 	result.rows = a->rows;
 	result.cols = a->cols;
 	result.ld = a->ld;
-	result.contents = malloc(a->rows * a->cols * sizeof(float));
+	result.contents = reinterpret_cast<float*>(malloc(a->rows * a->cols * sizeof(float)));
 	if (!result.contents) {
 		perror("Error allocating result.contents in Matrixf32Copy");
 		exit(1);
@@ -91,15 +95,27 @@ matrix_f32 Matrixf32Multiply(const matrix_f32 *a, const matrix_f32 *b)
 	result.rows = a->rows;
 	result.cols = b->cols;
 	result.ld = b->cols;
-	result.contents = calloc(result.rows * result.cols, sizeof(float));
-	if (!result.contents) {
+	result.contents = reinterpret_cast<float*>(calloc(result.rows * result.cols, sizeof(float)));
+	int err = Matrixf32MultiplyToTarget(&result, a, b);
+	return result;
+}
+
+int Matrixf32MultiplyToTarget(matrix_f32 *result, const matrix_f32 *a, const matrix_f32 *b)
+{
+	assert(a->cols == b->rows);
+	// We check that result has already been allocated properly
+	assert(result->rows == a->rows);
+	assert(result->cols == b->cols);
+	assert(result->ld == b->cols);
+	assert(!!(result->contents));
+	if (!result->contents) {
 		perror("Error allocating result.contents in Matrixf32Multiply");
 		exit(1);
 	}
 	for (size_t i = 0; i < a->rows; i++)
 	{
 		const float *aRow = a->contents + i * a->cols;
-		float *resultRow = result.contents + i * result.cols;
+		float *resultRow = result->contents + i * result->cols;
 		for (size_t k = 0; k < b->rows; k++)
 		{
 			const float *bRow = b->contents + k * b->cols;
@@ -119,9 +135,8 @@ matrix_f32 Matrixf32Multiply(const matrix_f32 *a, const matrix_f32 *b)
 			}
 		}
 	}
-	return result;
+	return 0;
 }
-
 /*
 Multiply inplace by a scalar
 */
@@ -140,7 +155,7 @@ matrix_f32 Matrixf32Sum(matrix_f32 *a, matrix_f32 *b) {
 	result.rows = a->rows;
 	result.cols = b->cols;
 	result.ld = result.cols;
-	result.contents = malloc(a->rows * a->cols * sizeof(float));
+	result.contents = reinterpret_cast<float*>(malloc(a->rows * a->cols * sizeof(float)));
 	if (!result.contents) {
 		perror("Error allocating results in Matrixf32Sum");
 		exit(1);
@@ -160,7 +175,7 @@ matrix_f32 RandomMatrixf32(size_t rows, size_t cols)
 	result.rows = rows;
 	result.cols = cols;
 	result.ld = cols;
-	result.contents = malloc(rows * cols * sizeof(float));
+	result.contents = reinterpret_cast<float*>(malloc(rows * cols * sizeof(float)));
 	if (!result.contents) {
 		perror("Error allocating result.contents in RandomMatrixf32");
 		exit(1);
@@ -181,7 +196,7 @@ matrix_f32 Onesf32(size_t rows, size_t cols)
 	result.rows = rows;
 	result.cols = cols;
 	result.ld = cols;
-	result.contents = malloc(rows * cols * sizeof(float));
+	result.contents = reinterpret_cast<float*>(malloc(rows * cols * sizeof(float)));
 	if (!result.contents) {
 		perror("Error allocating result.contents in Onesf32");
 		exit(1);
@@ -203,7 +218,7 @@ matrix_f32 Identityf32(size_t n)
 	result.rows = n;
 	result.cols = n;
 	result.ld = n;
-	result.contents = calloc(n * n, sizeof(float));
+	result.contents = reinterpret_cast<float*>(calloc(n * n, sizeof(float)));
 	for (size_t i = 0; i < n; i++)
 	{
 		result.contents[i * result.ld + i] = 1;
@@ -219,7 +234,7 @@ matrix_f32 UpperRandomf32(size_t n) {
 	result.rows = n;
 	result.cols = n;
 	result.ld = n;
-	result.contents = calloc(n * n, sizeof(float));
+	result.contents = reinterpret_cast<float*>(calloc(n * n, sizeof(float)));
 	for (size_t i = 0; i < n; i++) {
 		for (size_t j = i; j < n; j++) {
 			result.contents[i * result.ld + j] = 100 * ((float)rand()) / RAND_MAX;
@@ -236,7 +251,7 @@ matrix_f32 LowerRandomf32(size_t n) {
 	result.rows = n;
 	result.cols = n;
 	result.ld = n;
-	result.contents = calloc(n * n, sizeof(float));
+	result.contents = reinterpret_cast<float*>(calloc(n * n, sizeof(float)));
 	for (size_t i = 0; i < n; i++) {
 		for (size_t j = i + 1; j > 0; j--) { // stupid trick because j is an unsigned int
 			MATRIX_ITEM(&result, i, j - 1) = 100 * ((float)rand()) / RAND_MAX;
@@ -297,10 +312,11 @@ void Microkernel(const matrix_f32 *a, const matrix_f32 *b, matrix_f32 *result, s
 #else
 // AMD64 implementation
 #define SIMD_VECTOR_SIZE 8 
-void Microkernel(const matrix_f32 *a, const matrix_f32 *b, matrix_f32 *result, size_t resultRow, size_t resultCol, const size_t kernelWidth, const size_t kernelHeight)
+void Microkernel(const matrix_f32 *a, const matrix_f32 *b, float *resultLocation, size_t resultRow, size_t resultCol, const size_t kernelWidth, const size_t kernelHeight)
 {
 	assert(a->cols == b->rows);
-	__m256 resultElems[128];
+	assert(kernelHeight * kernelWidth < 32);
+	__m256 resultElems[32];
 	for (size_t i = 0; i < kernelHeight; i++)
 	{
 		for (size_t j = 0; j < kernelWidth; j++)
@@ -346,7 +362,7 @@ void Microkernel(const matrix_f32 *a, const matrix_f32 *b, matrix_f32 *result, s
 
 				__m256 bElems_7j = _mm256_load_ps(MatrixGetAddr(b, SIMD_VECTOR_SIZE * k + 7, resultCol + SIMD_VECTOR_SIZE * j));
 				__m256 broadcastA_i7 = _mm256_set1_ps(*(aElems_i + 7));
-				resultElems[i * kernelWidth + j] =  _mm256_fmadd_ps(broadcastA_i7, bElems_7j, resultElems[i * kernelWidth + j]);
+				resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(broadcastA_i7, bElems_7j, resultElems[i * kernelWidth + j]);
 			}
 		}
 	}
@@ -355,7 +371,7 @@ void Microkernel(const matrix_f32 *a, const matrix_f32 *b, matrix_f32 *result, s
 	{
 		for (size_t j = 0; j < kernelWidth; j++)
 		{
-			_mm256_store_ps(MatrixGetAddr(result, resultRow + i, resultCol + SIMD_VECTOR_SIZE * j), resultElems[i * kernelWidth + j]);
+			_mm256_store_ps(resultLocation + i * b->cols + j * SIMD_VECTOR_SIZE, resultElems[i * kernelWidth + j]);
 		}
 	}
 
@@ -438,29 +454,53 @@ matrix_f32 Matrixf32MicrokernelMultiply(const matrix_f32 *a, const matrix_f32 *b
 	result.rows = a->rows;
 	result.cols = b->cols;
 	result.ld = b->cols;
-	result.contents = calloc(a->rows * b->cols, sizeof(float));
+	result.contents = reinterpret_cast<float*>(calloc(a->rows * b->cols, sizeof(float)));
 	const size_t nRows = a->rows / kernelHeight;
+	const size_t rowRemainder = a->rows % kernelHeight;
 	const size_t nCols = b->cols / (kernelWidth * SIMD_VECTOR_SIZE);
-	const size_t remainder = a->cols % SIMD_VECTOR_SIZE;
+	const size_t colRemainder = a->cols % SIMD_VECTOR_SIZE;
+	ThreadPool *pool = ThreadPool::getInstance();
+	std::vector<TaskHandle> futures(nRows);
 	// Do the main block
-	for (size_t row = 0; row < nRows; row++)
-	{
+	//#pragma omp parallel num_threads(3)
+	// OpenMP does not really seem to get much of a speedup out of the box. Is it too conservative with shared resources or something?
+	for (int row = 0; row < nRows; row++) {
+		auto rowTask = [=, &result]() {
+			for (size_t col = 0; col < nCols; col++) {
+				float *resultLocation = MatrixGetAddr(&result, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE);
+				Microkernel(a, b, resultLocation, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE, kernelWidth, kernelHeight);
+				if (colRemainder) {
+					MicrokernelRemainder(a, b, &result, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE, kernelWidth, kernelHeight);
+				}
+			}
+			return true;
+		};
+		futures[row] = pool->spawnTask(rowTask);
+	}
+
+	for (size_t task = 0; task < nRows; task++) {
+		pool->activeWait(futures[task]);
+	}
+
+	/*
+	for (int row = 0; row < nRows; row++)
+	{	
 		for (size_t col = 0; col < nCols; col++)
 		{
-			Microkernel(a, b, &result, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE, kernelWidth, kernelHeight);
-			if (remainder) {
+			float *resultLocation = MatrixGetAddr(&result, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE);
+			Microkernel(a, b, resultLocation, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE, kernelWidth, kernelHeight);
+			if (colRemainder) {
 				MicrokernelRemainder(a, b, &result, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE, kernelWidth, kernelHeight);
 			}
 		}
-	}
+	}*/
 	// Do the remaining lines if any (we may still have some columns to fill in afterwards)
-	for (size_t row = nRows * kernelHeight; row < a->rows; row++)
-	{
-		for (size_t col = 0; col < nCols; col++)
-		{
-			Microkernel(a, b, &result, row, col * kernelWidth * SIMD_VECTOR_SIZE, 1, kernelWidth);
-			if (remainder) {
-				MicrokernelRemainder(a, b, &result, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE, 1, kernelWidth);
+	if (rowRemainder) {
+		for (size_t col = 0; col < nCols; col++) {
+			float *resultLocation = MatrixGetAddr(&result, nRows * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE);
+			Microkernel(a, b, resultLocation, nRows * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE, kernelWidth, rowRemainder);
+			if (colRemainder) {
+				MicrokernelRemainder(a, b, &result, nRows * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE, kernelWidth, rowRemainder);
 			}
 		}
 	}

@@ -104,26 +104,37 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <CompileAs>CompileAsC</CompileAs>
+      <CompileAs>CompileAsCpp</CompileAs>
       <WarningLevel>Level4</WarningLevel>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <OpenMPSupport>true</OpenMPSupport>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <OpenMPSupport>true</OpenMPSupport>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="basic_math.c" />
-    <ClCompile Include="complex.c" />
-    <ClCompile Include="linalg.c" />
-    <ClCompile Include="matrix.c" />
-    <ClCompile Include="matrix_benchmarks.c" />
-    <ClCompile Include="multithreading.c" />
-    <ClCompile Include="old_matrix.c" />
-    <ClCompile Include="tests.c" />
-    <ClCompile Include="winmain.c" />
+    <ClCompile Include="basic_math.cpp" />
+    <ClCompile Include="complex.cpp" />
+    <ClCompile Include="linalg.cpp" />
+    <ClCompile Include="matrix.cpp" />
+    <ClCompile Include="matrix_benchmarks.cpp" />
+    <ClCompile Include="multithreading.cpp" />
+    <ClCompile Include="old_matrix.cpp" />
+    <ClCompile Include="savinethreadpool.cpp" />
+    <ClCompile Include="tests.cpp" />
+    <ClCompile Include="winmain.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="basic_math.h" />
+    <ClInclude Include="concurrent_queue.h" />
     <ClInclude Include="linalg.h" />
     <ClInclude Include="matrix.h" />
     <ClInclude Include="matrix_benchmarks.h" />
+    <ClInclude Include="savinethreadpool.h" />
     <ClInclude Include="tests.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

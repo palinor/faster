@@ -180,7 +180,7 @@ int TestLUFactorize() {
 	matrix_f32 u = UpperRandomf32(n);
 	matrix_f32 a = Matrixf32Multiply(&l, &u);
 	matrix_f32 aCopy = Matrixf32Copy(&a);
-	size_t *index = malloc(n * sizeof(size_t));
+	size_t *index = reinterpret_cast<size_t*>(malloc(n * sizeof(size_t)));
 	if (!index) {
 		perror("Error allocating index in TestLUFactorize");
 		exit(1);

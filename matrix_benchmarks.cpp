@@ -1,4 +1,5 @@
 #pragma once
+#include <memory>
 #include <time.h>
 #include "matrix.h"
 #include "matrix_benchmarks.h"
@@ -47,6 +48,7 @@ void PrintBenchmark(benchmark_results benchmark)
 	printf("Matrix multiply %llu %llu %llu\n", benchmark.i, benchmark.j, benchmark.k);
 	printf("GFLOPS: %lf\n", benchmark.gflops);
 	printf("Max error: %lf\n", benchmark.max_error);
+	printf("Total time: %lf\n", benchmark.total_time);
 	printf("===========\n");
 }
 
@@ -56,28 +58,27 @@ double GFlops(double nOps, double timeInSeconds)
 	return nOps * 2e-9 / timeInSeconds;
 }
 
-
-benchmark_results TestRandom(size_t size_i, size_t size_j, size_t size_k, int nTrials, const size_t kernelWidth, const size_t kernelHeight)
+benchmark_results TestRandomNaive(size_t size_i, size_t size_j, size_t size_k, int nTrials, const size_t kernelWidth, const size_t kernelHeight)
 {
 	const matrix_f32 a = RandomMatrixf32(size_i, size_k);
 	const matrix_f32 b = RandomMatrixf32(size_k, size_j);
 	benchmark_results averageResult;
 	averageResult.gflops = 0;
-	averageResult.i = a.rows;
-	averageResult.j = b.cols;
-	averageResult.k = a.cols;
-	double nOps = averageResult.i * averageResult.j * averageResult.k;
-	double time = 0;
+	averageResult.i = size_i;
+	averageResult.j = size_j;
+	averageResult.k = size_k;
+	averageResult.total_time = 0;
+	double nOps = size_i * size_j * size_k;
+	matrix_f32 targetResult = Matrixf32Multiply(&a, &b);
+	
 	for (int trial = 0; trial < nTrials; trial++)
 	{
-		matrix_f32 targetResult = Matrixf32Multiply(&a, &b);
 		benchmark_endpoint start = GetBenchmarkEndpoint();
-		matrix_f32 testResult = Matrixf32MicrokernelMultiply(&a, &b, kernelWidth, kernelHeight);
+		matrix_f32 testResult = Matrixf32Multiply(&a, &b);
 		benchmark_endpoint end = GetBenchmarkEndpoint();
-		float maxError = GetMaxError(&testResult, &targetResult);
 		double timeInSeconds = GetTimeDiffFromEndpoints(start, end);
-		time += timeInSeconds;
-		averageResult.max_error = maxError;
+		averageResult.total_time += timeInSeconds;
+		averageResult.max_error = GetMaxError(&testResult, &targetResult);
 		averageResult.result = testResult;
 		if (nTrials == 1) {
 			PrintMatrixf32(&targetResult);
@@ -86,8 +87,44 @@ benchmark_results TestRandom(size_t size_i, size_t size_j, size_t size_k, int nT
 			matrix_f32 diff = Matrixf32Sum(&targetResult, &testResult);
 			PrintMatrixf32(&diff);
 		}
+		free(testResult.contents);
 	}
-	averageResult.gflops = nOps * (double)nTrials * 1e-9 / time;
+	averageResult.gflops = GFlops(nOps * nTrials, averageResult.total_time);
+	return averageResult;
+}
+
+benchmark_results TestRandom(size_t size_i, size_t size_j, size_t size_k, int nTrials, const size_t kernelWidth, const size_t kernelHeight)
+{
+	const matrix_f32 a = RandomMatrixf32(size_i, size_k);
+	const matrix_f32 b = RandomMatrixf32(size_k, size_j);
+	benchmark_results averageResult;
+	averageResult.gflops = 0;
+	averageResult.i = size_i;
+	averageResult.j = size_j;
+	averageResult.k = size_k;
+	averageResult.total_time = 0;
+	double nOps = size_i * size_j * size_k;
+	matrix_f32 targetResult = Matrixf32Multiply(&a, &b);
+	for (int trial = 0; trial < nTrials; trial++)
+	{
+		benchmark_endpoint start = GetBenchmarkEndpoint();
+		matrix_f32 testResult = Matrixf32MicrokernelMultiply(&a, &b, kernelWidth, kernelHeight);
+		benchmark_endpoint end = GetBenchmarkEndpoint();
+		double timeInSeconds = GetTimeDiffFromEndpoints(start, end);
+		averageResult.total_time += timeInSeconds;
+		averageResult.max_error = GetMaxError(&testResult, &targetResult);
+		averageResult.result = testResult;
+		averageResult.gflops += GFlops(nOps, timeInSeconds);
+		if (nTrials == 1) {
+			PrintMatrixf32(&targetResult);
+			printf("\n\n\n");
+			Matrixf32MultiplyInplace(&testResult, -1);
+			matrix_f32 diff = Matrixf32Sum(&targetResult, &testResult);
+			PrintMatrixf32(&diff);
+		}
+		free(testResult.contents);
+	}
+	averageResult.gflops = GFlops(nOps * nTrials, averageResult.total_time);
 	return averageResult;
 }
 
@@ -97,31 +134,36 @@ benchmark_results TestOnes(size_t size_i, size_t size_j, size_t size_k, int nTri
 	const matrix_f32 a = Onesf32(size_i, size_k);
 	const matrix_f32 b = Onesf32(size_k, size_j);
 	averageResult.gflops = 0;
-	averageResult.i = a.rows;
-	averageResult.j = b.cols;
-	averageResult.k = a.cols;
+	averageResult.i = size_i;
+	averageResult.j = size_j;
+	averageResult.k = size_k;
+	averageResult.total_time = 0;
+	double nOps = size_i * size_j * size_k;
+	matrix_f32 targetResult = Matrixf32Multiply(&a, &b);
 	for (int trial = 0; trial < nTrials; trial++)
 	{
 		benchmark_endpoint start = GetBenchmarkEndpoint();
 		matrix_f32 testResult = Matrixf32MicrokernelMultiply(&a, &b, kernelWidth, kernelHeight);
 		benchmark_endpoint end = GetBenchmarkEndpoint();
-		matrix_f32 targetResult = Matrixf32Multiply(&a, &b);
-		float maxError = GetMaxError(&testResult, &targetResult);
-		double nOps = averageResult.i * averageResult.j * averageResult.k;
 		double timeInSeconds = GetTimeDiffFromEndpoints(start, end);
-		averageResult.gflops += GFlops(nOps, timeInSeconds);
-		averageResult.max_error = maxError;
+		averageResult.total_time += timeInSeconds;
+		averageResult.max_error = GetMaxError(&testResult, &targetResult);
 		averageResult.result = testResult;
+		free(testResult.contents);
 	}
-	averageResult.gflops /= (double)nTrials;
-
+	averageResult.gflops = GFlops(nOps * nTrials, averageResult.total_time);
 	return averageResult;
 }
 
 int MatrixBenchmarksMain(size_t sizeI, size_t sizeJ, size_t sizeK, int nTrials, const size_t kernelWidth, const size_t kernelHeight)
 {
-	benchmark_results benchmark = TestRandom(sizeI, sizeJ, sizeK, nTrials, kernelWidth, kernelHeight);
+	printf("Testing Naive multiply on random matrices\n");
+	benchmark_results benchmark = TestRandomNaive(sizeI, sizeJ, sizeK, nTrials, kernelWidth, kernelHeight);
 	PrintBenchmark(benchmark);
+	printf("Testing microkernel multiply on random matrices\n");
+	benchmark = TestRandom(sizeI, sizeJ, sizeK, nTrials, kernelWidth, kernelHeight);
+	PrintBenchmark(benchmark);
+	printf("Testing microkernel multiply on matrices of ones\n");
 	benchmark = TestOnes(sizeI, sizeJ, sizeK, nTrials, kernelWidth, kernelHeight);
 	PrintBenchmark(benchmark);
 	return 0;

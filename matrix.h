@@ -29,6 +29,7 @@ void PrintMatrixf32(matrix_f32 *result);
 double GetMaxError(matrix_f32 *a, matrix_f32 *b);
 
 matrix_f32 Matrixf32Multiply(const matrix_f32 *a, const matrix_f32 *b);
+int Matrixf32MultiplyToTarget(matrix_f32 *result, const matrix_f32 *a, const matrix_f32 *b);
 /*
 Multiply inplace by a scalar
 */

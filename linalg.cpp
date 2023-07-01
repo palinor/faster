@@ -1,7 +1,7 @@
 #pragma once
-#include <assert.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <cassert>
+#include <memory>
+
 #include "linalg.h"
 #include "matrix.h"
 
@@ -23,11 +23,9 @@ int GaussJordan(matrix_f32 *a, matrix_f32 *b) {
 	size_t n = a->rows;
 	size_t icol = 0, irow = 0;
 	float big = 0, pivinv = 0;
-	//todo(AION) : for now we malloc everything, we can come back
-	// and write another function to heap allocate for small n (don't know if this is easy/possible in C)
-	size_t *indxc = malloc(n * sizeof(size_t));
-	size_t *indxr = malloc(n * sizeof(size_t));
-	size_t *ipiv = calloc(n, sizeof(size_t));
+	size_t *indxc = reinterpret_cast<size_t*>(malloc(n * sizeof(size_t)));
+	size_t *indxr = reinterpret_cast<size_t*>(malloc(n * sizeof(size_t)));
+	size_t *ipiv = reinterpret_cast<size_t*>(calloc(n, sizeof(size_t)));
 	if (!(!!(indxc) * !!(indxr) * !!(ipiv))) {
 		perror("Error allocating memory for GausJordan");
 		exit(1);
@@ -117,7 +115,7 @@ As above, we use our own matrix struct, not their pointers to pointers stuff bec
 int LUFactorize(matrix_f32 *a, size_t *index) {
 	assert(a->cols == a->rows);
 	size_t n = a->cols;
-	float *scaling_values = malloc(n * sizeof(float));  // what we scaled each row by (1 / pivot)
+	float *scaling_values = reinterpret_cast<float*>(malloc(n * sizeof(float)));  // what we scaled each row by (1 / pivot)
 	if (!scaling_values) {
 		perror("Error allocating scaling_values in LUFactorize");
 		exit(1);

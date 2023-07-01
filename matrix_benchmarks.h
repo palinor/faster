@@ -18,6 +18,7 @@ double GetTimeDiffFromEndpoints(benchmark_endpoint start, benchmark_endpoint end
 typedef struct benchmark_results
 {
 	double gflops;
+	double total_time;
 	float max_error;
 	size_t i;
 	size_t j;
