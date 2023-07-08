@@ -33,6 +33,120 @@
 #define SIGN(x) (((x) > 0) ? 1 : -1)
 
 
+using task = std::packaged_task<bool(void)>;
+using task_handle = std::future<bool>;
+
+struct task_queue {
+	task *tasks;
+	size_t startingMaxSize;
+	size_t maxSize;
+	size_t currentSize;
+	size_t currentHead;
+};
+
+void CreateTaskQueue(task_queue *result, size_t maxSize) {
+	result->tasks = (task *)malloc(maxSize * sizeof(task));
+	result->maxSize = maxSize;
+	result->startingMaxSize = maxSize;
+	result->currentSize = 0;
+	result->currentHead = 0;
+}
+
+void FreeTaskQueue(task_queue *result) {
+	free(result->tasks);
+}
+
+void TaskQueuePush(task_queue *input, task *element) {
+	if (input->currentSize == input->maxSize) {
+		size_t newSize = input->maxSize * 2 + 1;
+		input->tasks = (task *)realloc(input->tasks, newSize * sizeof(task));
+		input->maxSize = newSize;
+	}
+	input->tasks[input->currentSize++] = std::move(*element);
+}
+
+inline bool IsTaskQueueEmpty(task_queue *input) {
+	return (input->currentHead == input->maxSize);
+}
+
+int TaskQueuePop(task *output, task_queue *input) {
+	if (input->currentHead == input->maxSize) {
+		return 1;
+	}
+	*output = std::move(input->tasks[input->currentHead]);
+	input->currentHead++;
+
+	if (IsTaskQueueEmpty(input)) {
+		size_t newSize = input->maxSize - input->startingMaxSize;
+		task *oldTasks = input->tasks;
+		task *newTasks = (task *)realloc(oldTasks + input->startingMaxSize, newSize * sizeof(task));
+		input->tasks = newTasks;
+		free(oldTasks);
+	}
+	return 0;
+}
+
+
+struct concurrent_task_queue {
+	task_queue queue_;
+	mutable std::mutex mutex_;
+	std::condition_variable cv_;
+	bool interrupt_;
+};
+
+void InterruptConcurrentTaskQueue(concurrent_task_queue *input) {
+	input->mutex_.lock();
+	input->interrupt_ = true;
+	input->mutex_.unlock();
+	input->cv_.notify_all();
+}
+
+inline bool IsConcurrentTaskQueueEmpty(concurrent_task_queue *input) {
+	return IsTaskQueueEmpty(&(input->queue_));
+}
+
+void ConcurrentTaskQueuePush(concurrent_task_queue *input, task *newTask) {
+	input->mutex_.lock();
+	TaskQueuePush(&(input->queue_), newTask);
+	input->mutex_.unlock();
+	input->cv_.notify_one();
+}
+
+bool ConcurrentTaskQueuePop(task *result, concurrent_task_queue *input) {
+	std::unique_lock<std::mutex> lk(input->mutex_);
+	while (!input->interrupt_ && IsTaskQueueEmpty(&(input->queue_))) {
+		input->cv_.wait(lk);
+	}
+	if (input->interrupt_) {
+		return false;
+	}
+	TaskQueuePop(result, &(input->queue_));
+	return true;
+}
+
+bool ConcurrentTaskQueuePopTry(task *result, concurrent_task_queue *input) {
+	input->mutex_.lock();
+	if (IsTaskQueueEmpty(&(input->queue_))) {
+		return false;
+	}
+	TaskQueuePop(result, &(input->queue_));
+	input->mutex_.unlock();
+	return true;
+}
+
+bool tryPop(T &t) {
+	std::lock_guard<std::mutex> lk(my_mutex_);
+	if (my_queue_.empty()) return false;
+	t = std::move(my_queue_.front());
+	my_queue_.pop();
+	return true;
+}
+
+void clear() {
+	std::queue<T> empty;
+	swap(my_queue_, empty);
+}
+
 template <class T>
 class ConcurrentQueue {
 	std::queue<T> my_queue_;
@@ -91,8 +205,20 @@ public:
 	}
 };
 
-using Task = std::packaged_task<bool(void)>;
-using TaskHandle = std::future<bool>;
+
+typedef struct ThreadPool {
+	static thread_local size_t my_thread_number_;
+
+
+} ThreadPool;
+
+void RunSingleThread(ConcurrentQueue<Task> *workQueue, bool *interrupt) {
+	Task t;
+	while (!interrupt) {
+		workQueue->pop(t);
+		if (!interrupt) t();
+	}
+}
 
 class ThreadPool {
 
@@ -182,8 +308,7 @@ bool ThreadPool::activeWait(const TaskHandle &f) {
 		if (my_queue_.tryPop(t)) {
 			t();
 			i_did_work = true;
-		}
-		else {
+		} else {
 			f.wait();
 		}
 	}
@@ -211,7 +336,7 @@ matrix_f32 Matrixf32Copy(matrix_f32 *a) {
 	result.rows = a->rows;
 	result.cols = a->cols;
 	result.ld = a->ld;
-	result.contents = reinterpret_cast<float*>(malloc(a->rows * a->cols * sizeof(float)));
+	result.contents = reinterpret_cast<float *>(malloc(a->rows * a->cols * sizeof(float)));
 	if (!result.contents) {
 		perror("Error allocating result.contents in Matrixf32Copy");
 		exit(1);
@@ -316,7 +441,7 @@ matrix_f32 Matrixf32Multiply(const matrix_f32 *a, const matrix_f32 *b)
 	result.rows = a->rows;
 	result.cols = b->cols;
 	result.ld = b->cols;
-	result.contents = reinterpret_cast<float*>(calloc(result.rows * result.cols, sizeof(float)));
+	result.contents = reinterpret_cast<float *>(calloc(result.rows * result.cols, sizeof(float)));
 	int err = Matrixf32MultiplyToTarget(&result, a, b);
 	return result;
 }
@@ -338,7 +463,7 @@ matrix_f32 Matrixf32Sum(matrix_f32 *a, matrix_f32 *b) {
 	result.rows = a->rows;
 	result.cols = b->cols;
 	result.ld = result.cols;
-	result.contents = reinterpret_cast<float*>(malloc(a->rows * a->cols * sizeof(float)));
+	result.contents = reinterpret_cast<float *>(malloc(a->rows * a->cols * sizeof(float)));
 	if (!result.contents) {
 		perror("Error allocating results in Matrixf32Sum");
 		exit(1);
@@ -358,7 +483,7 @@ matrix_f32 RandomMatrixf32(size_t rows, size_t cols)
 	result.rows = rows;
 	result.cols = cols;
 	result.ld = cols;
-	result.contents = reinterpret_cast<float*>(malloc(rows * cols * sizeof(float)));
+	result.contents = reinterpret_cast<float *>(malloc(rows * cols * sizeof(float)));
 	if (!result.contents) {
 		perror("Error allocating result.contents in RandomMatrixf32");
 		exit(1);
@@ -379,7 +504,7 @@ matrix_f32 Onesf32(size_t rows, size_t cols)
 	result.rows = rows;
 	result.cols = cols;
 	result.ld = cols;
-	result.contents = reinterpret_cast<float*>(malloc(rows * cols * sizeof(float)));
+	result.contents = reinterpret_cast<float *>(malloc(rows * cols * sizeof(float)));
 	if (!result.contents) {
 		perror("Error allocating result.contents in Onesf32");
 		exit(1);
@@ -401,7 +526,7 @@ matrix_f32 Identityf32(size_t n)
 	result.rows = n;
 	result.cols = n;
 	result.ld = n;
-	result.contents = reinterpret_cast<float*>(calloc(n * n, sizeof(float)));
+	result.contents = reinterpret_cast<float *>(calloc(n * n, sizeof(float)));
 	for (size_t i = 0; i < n; i++)
 	{
 		result.contents[i * result.ld + i] = 1;
@@ -417,7 +542,7 @@ matrix_f32 UpperRandomf32(size_t n) {
 	result.rows = n;
 	result.cols = n;
 	result.ld = n;
-	result.contents = reinterpret_cast<float*>(calloc(n * n, sizeof(float)));
+	result.contents = reinterpret_cast<float *>(calloc(n * n, sizeof(float)));
 	for (size_t i = 0; i < n; i++) {
 		for (size_t j = i; j < n; j++) {
 			result.contents[i * result.ld + j] = 100 * ((float)rand()) / RAND_MAX;
@@ -434,7 +559,7 @@ matrix_f32 LowerRandomf32(size_t n) {
 	result.rows = n;
 	result.cols = n;
 	result.ld = n;
-	result.contents = reinterpret_cast<float*>(calloc(n * n, sizeof(float)));
+	result.contents = reinterpret_cast<float *>(calloc(n * n, sizeof(float)));
 	for (size_t i = 0; i < n; i++) {
 		for (size_t j = i + 1; j > 0; j--) { // stupid trick because j is an unsigned int
 			MATRIX_ITEM(&result, i, j - 1) = 100 * ((float)rand()) / RAND_MAX;
@@ -453,7 +578,7 @@ void Microkernel(const matrix_f32 *a, const matrix_f32 *b, float *resultLocation
 {
 	assert(a->cols == b->rows);
 	assert(kernelWidth * kernelHeight < 128);
-    // resultElems is really an array of size kernelWidth * kernelHeight
+	// resultElems is really an array of size kernelWidth * kernelHeight
 	float32x4_t resultElems[128];
 	for (size_t i = 0; i < kernelHeight; i++)
 	{
@@ -510,20 +635,20 @@ void MicrokernelRemainder(const matrix_f32 *a, const matrix_f32 *b, float *resul
 	}
 	for (size_t i = 0; i < kernelHeight; i++)
 	{
-        float32x4_t aRemainder_i = vld1q_f32(MatrixGetAddr(a, resultRow + i, a->cols - remainder));
+		float32x4_t aRemainder_i = vld1q_f32(MatrixGetAddr(a, resultRow + i, a->cols - remainder));
 		for (size_t j = 0; j < kernelWidth; j++)
 		{
 			float32x4_t bRemainderElems_0j = vld1q_f32(MatrixGetAddr(b, a->cols - remainder, resultCol + SIMD_VECTOR_SIZE * j));
-            resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bRemainderElems_0j, aRemainder_i, 0);
+			resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bRemainderElems_0j, aRemainder_i, 0);
 			if (remainder > 1)
 			{
-			float32x4_t bRemainderElems_1j = vld1q_f32(MatrixGetAddr(b, a->cols - remainder + 1, resultCol + SIMD_VECTOR_SIZE * j));
-            resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bRemainderElems_1j, aRemainder_i, 1);
+				float32x4_t bRemainderElems_1j = vld1q_f32(MatrixGetAddr(b, a->cols - remainder + 1, resultCol + SIMD_VECTOR_SIZE * j));
+				resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bRemainderElems_1j, aRemainder_i, 1);
 			}
 			if (remainder > 2)
 			{
-			float32x4_t bRemainderElems_2j = vld1q_f32(MatrixGetAddr(b, a->cols - remainder + 2, resultCol + SIMD_VECTOR_SIZE * j));
-            resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bRemainderElems_2j, aRemainder_i, 2);
+				float32x4_t bRemainderElems_2j = vld1q_f32(MatrixGetAddr(b, a->cols - remainder + 2, resultCol + SIMD_VECTOR_SIZE * j));
+				resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bRemainderElems_2j, aRemainder_i, 2);
 			}
 		}
 	}
@@ -610,7 +735,7 @@ If k is not divisible by SIMD_VECTOR_SIZE, handle the addition of the remaining 
 void MicrokernelRemainder(const matrix_f32 *a, const matrix_f32 *b, matrix_f32 *result, size_t resultRow, size_t resultCol, size_t kernelWidth, size_t kernelHeight)
 {
 	size_t remainder = a->cols % SIMD_VECTOR_SIZE;
-	__m256 resultElems[32]: 
+	__m256 resultElems[32]:
 	for (size_t i = 0; i < kernelHeight; i++)
 	{
 		for (size_t j = 0; j < kernelWidth; j++)
@@ -680,7 +805,7 @@ matrix_f32 Matrixf32MicrokernelMultiply(const matrix_f32 *a, const matrix_f32 *b
 	result.rows = a->rows;
 	result.cols = b->cols;
 	result.ld = b->cols;
-	result.contents = reinterpret_cast<float*>(calloc(a->rows * b->cols, sizeof(float)));
+	result.contents = reinterpret_cast<float *>(calloc(a->rows * b->cols, sizeof(float)));
 	const size_t nRows = a->rows / kernelHeight;
 	const size_t rowRemainder = a->rows % kernelHeight;
 	const size_t nCols = b->cols / (kernelWidth * SIMD_VECTOR_SIZE);
@@ -710,7 +835,7 @@ matrix_f32 Matrixf32MicrokernelMultiply(const matrix_f32 *a, const matrix_f32 *b
 
 	/*
 	for (int row = 0; row < nRows; row++)
-	{	
+	{
 		for (size_t col = 0; col < nCols; col++)
 		{
 			float *resultLocation = MatrixGetAddr(&result, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE);
@@ -849,7 +974,7 @@ benchmark_results TestRandomNaive(size_t size_i, size_t size_j, size_t size_k, i
 	averageResult.total_time = 0;
 	double nOps = size_i * size_j * size_k;
 	matrix_f32 targetResult = Matrixf32Multiply(&a, &b);
-	
+
 	for (int trial = 0; trial < nTrials; trial++)
 	{
 		benchmark_endpoint start = GetBenchmarkEndpoint();
@@ -935,7 +1060,7 @@ benchmark_results TestOnes(size_t size_i, size_t size_j, size_t size_k, int nTri
 			matrix_f32 diff = Matrixf32Sum(&targetResult, &testResult);
 			PrintMatrixf32(&diff);
 		}
-    free(testResult.contents);
+		free(testResult.contents);
 	}
 	averageResult.gflops = GFlops(nOps * nTrials, averageResult.total_time);
 	return averageResult;
