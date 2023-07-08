@@ -1,4 +1,3 @@
-#pragma once
 #include <stdarg.h>
 #include <stdlib.h>
 #include "basic_math.h"
@@ -209,7 +208,7 @@ int TestLUFactorize() {
 }
 
 
-int TestsMain()
+int main()
 {
 	RunTestFunction(TestFSqrt, "FSqrt");
 	RunTestFunction(TestFPow, "FPow");

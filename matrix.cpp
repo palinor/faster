@@ -1,28 +1,210 @@
-#pragma once
 #ifdef __APPLE__
 #include <arm_neon.h>
 #else 
 #include <immintrin.h>
+#include <omp.h>
 #endif
 
-#include <assert.h>
-#include <math.h>
-#include <omp.h>
-#include <stdbool.h>
+#ifdef _WIN32
+#pragma warning( disable: 4305 4244 6386)
+#endif
+
+#include <cassert>
+#include <cmath>
+#include <memory>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <vector>
 
-#include "matrix.h"
-#include "savinethreadpool.h"
+#include <chrono>
+#include <condition_variable>
+#include <future>
+#include <queue>
+#include <mutex>
+#include <thread>
+#include <stdio.h>
 
+#define ABS(x) (((x) > 0) ? (x) : -(x))
+#define MAX_FLOAT 1e20
+#define MIN_FLOAT 1e-12
+#define MATRIX_ITEM(a, i, j) ((a)->contents[(i) * (a)->ld + (j)])
+#define SIGN(x) (((x) > 0) ? 1 : -1)
+
+
+template <class T>
+class ConcurrentQueue {
+	std::queue<T> my_queue_;
+	mutable std::mutex my_mutex_;
+	std::condition_variable my_cv_;
+	bool my_interrupt_;
+
+public:
+
+	ConcurrentQueue() : my_interrupt_(false) {}
+	~ConcurrentQueue() { interrupt(); }
+
+	void interrupt() {
+		{
+			std::lock_guard<std::mutex> lk(my_mutex_);
+			my_interrupt_ = true;
+		}
+		my_cv_.notify_all();
+	}
+
+	void resetInterrupt() {
+		my_interrupt_ = false;
+	}
+
+	bool empty() const {
+		std::lock_guard<std::mutex> lk(my_mutex_);
+		return my_queue_.empty();
+	}
+
+	void push(T t) {
+		std::lock_guard<std::mutex> lk(my_mutex_);
+		my_queue_.push(std::move(t));
+		my_cv_.notify_one();
+	}
+
+	bool pop(T &t) {
+		std::unique_lock<std::mutex> lk(my_mutex_);
+		while (!my_interrupt_ && my_queue_.empty()) my_cv_.wait(lk);
+		if (my_interrupt_) return false;
+		t = std::move(my_queue_.front());
+		my_queue_.pop();
+		return true;
+	}
+
+	bool tryPop(T &t) {
+		std::lock_guard<std::mutex> lk(my_mutex_);
+		if (my_queue_.empty()) return false;
+		t = std::move(my_queue_.front());
+		my_queue_.pop();
+		return true;
+	}
+
+	void clear() {
+		std::queue<T> empty;
+		swap(my_queue_, empty);
+	}
+};
+
+using Task = std::packaged_task<bool(void)>;
+using TaskHandle = std::future<bool>;
+
+class ThreadPool {
+
+	static ThreadPool my_instance_;
+	static thread_local size_t my_thread_number_;
+	std::vector<std::thread> my_threads_;
+	bool is_active_;
+	bool is_interrupt_;
+	ConcurrentQueue<Task> my_queue_;
+	ThreadPool() : is_active_(false), is_interrupt_(false) {}
+
+	void threadFunc(const size_t thread_number);
+
+public:
+	static ThreadPool *getInstance() { return &my_instance_; }
+
+	ThreadPool(const ThreadPool &rhs) = delete;
+	ThreadPool &operator=(const ThreadPool &rhs) = delete;
+	ThreadPool(ThreadPool &&rhs) = delete;
+	ThreadPool &operator=(ThreadPool &&rhs) = delete;
+
+	void start(const size_t n_thread = std::thread::hardware_concurrency() - 1);
+	size_t numThreads() const { return my_threads_.size(); }
+	static size_t threadNum() { return my_thread_number_; }
+
+	void stop();
+	~ThreadPool() {
+		stop();
+	}
+
+	template<typename Callable>
+	TaskHandle spawnTask(Callable c) {
+		Task t(std::move(c));
+		TaskHandle f = t.get_future();
+		my_queue_.push(std::move(t));
+		return f;
+	}
+
+	bool activeWait(const TaskHandle &f);
+
+};
+
+
+using namespace std::chrono_literals;
+
+void ThreadPool::threadFunc(const size_t thread_number) {
+	my_thread_number_ = thread_number;
+	Task t;
+	while (!is_interrupt_) {
+		my_queue_.pop(t);
+		if (!is_interrupt_) t();
+	}
+}
+
+void ThreadPool::start(const size_t n_thread) {
+	if (!is_active_) {
+		my_threads_.reserve(n_thread);
+		for (size_t i = 0; i < n_thread; i++)
+			my_threads_.push_back(std::thread(&ThreadPool::threadFunc, this, i + 1));
+		is_active_ = true;
+	}
+}
+
+
+void ThreadPool::stop() {
+	if (is_active_) {
+		is_interrupt_ = true;
+		my_queue_.interrupt();
+		std::for_each(
+			my_threads_.begin(),
+			my_threads_.end(),
+			std::mem_fn(&std::thread::join)
+		);
+		my_threads_.clear();
+		my_queue_.clear();
+		my_queue_.resetInterrupt();
+		is_active_ = false;
+		is_interrupt_ = false;
+	}
+}
+
+
+bool ThreadPool::activeWait(const TaskHandle &f) {
+	Task t;
+	bool i_did_work = false;
+	while (f.wait_for(0s) != std::future_status::ready) {
+		if (my_queue_.tryPop(t)) {
+			t();
+			i_did_work = true;
+		}
+		else {
+			f.wait();
+		}
+	}
+	return i_did_work;
+}
+
+
+ThreadPool ThreadPool::my_instance_;
+thread_local size_t ThreadPool::my_thread_number_ = 0;
+
+typedef struct matrix_f32
+{
+	size_t rows;
+	size_t cols;
+	float *contents;
+	size_t ld;
+} matrix_f32;
 
 void FreeMatrixf32(matrix_f32 *a) {
 	free(a->contents);
 }
-
 
 matrix_f32 Matrixf32Copy(matrix_f32 *a) {
 	matrix_f32 result;
@@ -88,17 +270,6 @@ double GetMaxError(matrix_f32 *a, matrix_f32 *b)
 	return maxError;
 }
 
-matrix_f32 Matrixf32Multiply(const matrix_f32 *a, const matrix_f32 *b)
-{
-	assert(a->cols == b->rows);
-	matrix_f32 result;
-	result.rows = a->rows;
-	result.cols = b->cols;
-	result.ld = b->cols;
-	result.contents = reinterpret_cast<float*>(calloc(result.rows * result.cols, sizeof(float)));
-	int err = Matrixf32MultiplyToTarget(&result, a, b);
-	return result;
-}
 
 int Matrixf32MultiplyToTarget(matrix_f32 *result, const matrix_f32 *a, const matrix_f32 *b)
 {
@@ -136,6 +307,18 @@ int Matrixf32MultiplyToTarget(matrix_f32 *result, const matrix_f32 *a, const mat
 		}
 	}
 	return 0;
+}
+
+matrix_f32 Matrixf32Multiply(const matrix_f32 *a, const matrix_f32 *b)
+{
+	assert(a->cols == b->rows);
+	matrix_f32 result;
+	result.rows = a->rows;
+	result.cols = b->cols;
+	result.ld = b->cols;
+	result.contents = reinterpret_cast<float*>(calloc(result.rows * result.cols, sizeof(float)));
+	int err = Matrixf32MultiplyToTarget(&result, a, b);
+	return result;
 }
 /*
 Multiply inplace by a scalar
@@ -263,39 +446,40 @@ matrix_f32 LowerRandomf32(size_t n) {
 /*
 Internal block for matrix multiplication - compute the result in blocks of isze kernelHeight x (4 * kernelWidth)
 */
-#ifdef _M_ARM
+#ifdef __APPLE__
 // ARM implimentation
-void Microkernel(const matrix_f32 *a, const matrix_f32 *b, matrix_f32 *result, size_t resultRow, size_t resultCol, size_t kernelWidth, size_t kernelHeight)
+#define SIMD_VECTOR_SIZE 4
+void Microkernel(const matrix_f32 *a, const matrix_f32 *b, float *resultLocation, size_t resultRow, size_t resultCol, size_t kernelWidth, size_t kernelHeight)
 {
 	assert(a->cols == b->rows);
-	float32x4_t resultElems[kernelHeight][kernelWidth];
+	assert(kernelWidth * kernelHeight < 128);
+    // resultElems is really an array of size kernelWidth * kernelHeight
+	float32x4_t resultElems[128];
 	for (size_t i = 0; i < kernelHeight; i++)
 	{
 		for (size_t j = 0; j < kernelWidth; j++)
 		{
-			resultElems[i][j] = vdupq_n_f32(0);
+			resultElems[i * kernelWidth + j] = vdupq_n_f32(0);
 		}
 	}
-	float32x4_t aElems[kernelHeight];
-	float32x4_t bElems[4][kernelWidth];
-	for (size_t k = 0; k < a->cols / 4; k++)
+	for (size_t k = 0; k < a->cols / SIMD_VECTOR_SIZE; k++)
 	{
 		for (size_t i = 0; i < kernelHeight; i++)
 		{
-			aElems[i] = vld1q_f32(MatrixGetAddr(a, resultRow + i, 4 * k));
+			float32x4_t aElems_i = vld1q_f32(MatrixGetAddr(a, resultRow + i, SIMD_VECTOR_SIZE * k));
 			for (size_t j = 0; j < kernelWidth; j++)
 			{
-				bElems[0][j] = vld1q_f32(MatrixGetAddr(b, 4 * k, resultCol + 4 * j));
-				resultElems[i][j] = vmlaq_laneq_f32(resultElems[i][j], bElems[0][j], aElems[i], 0);
+				float32x4_t bElems_i0 = vld1q_f32(MatrixGetAddr(b, SIMD_VECTOR_SIZE * k, resultCol + SIMD_VECTOR_SIZE * j));
+				resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bElems_i0, aElems_i, 0);
 
-				bElems[1][j] = vld1q_f32(MatrixGetAddr(b, 4 * k + 1, resultCol + 4 * j));
-				resultElems[i][j] = vmlaq_laneq_f32(resultElems[i][j], bElems[1][j], aElems[i], 1);
+				float32x4_t bElems_i1 = vld1q_f32(MatrixGetAddr(b, SIMD_VECTOR_SIZE * k + 1, resultCol + SIMD_VECTOR_SIZE * j));
+				resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bElems_i1, aElems_i, 1);
 
-				bElems[2][j] = vld1q_f32(MatrixGetAddr(b, 4 * k + 2, resultCol + 4 * j));
-				resultElems[i][j] = vmlaq_laneq_f32(resultElems[i][j], bElems[2][j], aElems[i], 2);
+				float32x4_t bElems_i2 = vld1q_f32(MatrixGetAddr(b, SIMD_VECTOR_SIZE * k + 2, resultCol + SIMD_VECTOR_SIZE * j));
+				resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bElems_i2, aElems_i, 2);
 
-				bElems[3][j] = vld1q_f32(MatrixGetAddr(b, 4 * k + 3, resultCol + 4 * j));
-				resultElems[i][j] = vmlaq_laneq_f32(resultElems[i][j], bElems[3][j], aElems[i], 3);
+				float32x4_t bElems_i3 = vld1q_f32(MatrixGetAddr(b, SIMD_VECTOR_SIZE * k + 3, resultCol + SIMD_VECTOR_SIZE * j));
+				resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bElems_i3, aElems_i, 3);
 			}
 		}
 	}
@@ -304,11 +488,53 @@ void Microkernel(const matrix_f32 *a, const matrix_f32 *b, matrix_f32 *result, s
 	{
 		for (size_t j = 0; j < kernelWidth; j++)
 		{
-			vst1q_f32(MatrixGetAddr(result, resultRow + i, resultCol + 4 * j), resultElems[i][j]);
+			vst1q_f32(resultLocation + i * b->cols + j * SIMD_VECTOR_SIZE, resultElems[i * kernelWidth + j]);
 		}
 	}
 }
 
+/*
+If k is not divisible by SIMD_VECTOR_SIZE, handle the addition of the remaining elements
+*/
+
+void MicrokernelRemainder(const matrix_f32 *a, const matrix_f32 *b, float *resultLocation, size_t resultRow, size_t resultCol, size_t kernelWidth, size_t kernelHeight)
+{
+	size_t remainder = a->cols % SIMD_VECTOR_SIZE;
+	float32x4_t resultElems[32];
+	for (size_t i = 0; i < kernelHeight; i++)
+	{
+		for (size_t j = 0; j < kernelWidth; j++)
+		{
+			resultElems[i * kernelWidth + j] = vdupq_n_f32(0);
+		}
+	}
+	for (size_t i = 0; i < kernelHeight; i++)
+	{
+        float32x4_t aRemainder_i = vld1q_f32(MatrixGetAddr(a, resultRow + i, a->cols - remainder));
+		for (size_t j = 0; j < kernelWidth; j++)
+		{
+			float32x4_t bRemainderElems_0j = vld1q_f32(MatrixGetAddr(b, a->cols - remainder, resultCol + SIMD_VECTOR_SIZE * j));
+            resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bRemainderElems_0j, aRemainder_i, 0);
+			if (remainder > 1)
+			{
+			float32x4_t bRemainderElems_1j = vld1q_f32(MatrixGetAddr(b, a->cols - remainder + 1, resultCol + SIMD_VECTOR_SIZE * j));
+            resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bRemainderElems_1j, aRemainder_i, 1);
+			}
+			if (remainder > 2)
+			{
+			float32x4_t bRemainderElems_2j = vld1q_f32(MatrixGetAddr(b, a->cols - remainder + 2, resultCol + SIMD_VECTOR_SIZE * j));
+            resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bRemainderElems_2j, aRemainder_i, 2);
+			}
+		}
+	}
+	for (size_t i = 0; i < kernelHeight; i++)
+	{
+		for (size_t j = 0; j < kernelWidth; j++)
+		{
+			vst1q_f32(resultLocation + i * b->cols + j * SIMD_VECTOR_SIZE, resultElems[i * kernelWidth + j]);
+		}
+	}
+}
 #else
 // AMD64 implementation
 #define SIMD_VECTOR_SIZE 8 
@@ -384,7 +610,7 @@ If k is not divisible by SIMD_VECTOR_SIZE, handle the addition of the remaining 
 void MicrokernelRemainder(const matrix_f32 *a, const matrix_f32 *b, matrix_f32 *result, size_t resultRow, size_t resultCol, size_t kernelWidth, size_t kernelHeight)
 {
 	size_t remainder = a->cols % SIMD_VECTOR_SIZE;
-	__m256 resultElems[SIMD_VECTOR_SIZE * 4];
+	__m256 resultElems[32]: 
 	for (size_t i = 0; i < kernelHeight; i++)
 	{
 		for (size_t j = 0; j < kernelWidth; j++)
@@ -470,7 +696,7 @@ matrix_f32 Matrixf32MicrokernelMultiply(const matrix_f32 *a, const matrix_f32 *b
 				float *resultLocation = MatrixGetAddr(&result, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE);
 				Microkernel(a, b, resultLocation, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE, kernelWidth, kernelHeight);
 				if (colRemainder) {
-					MicrokernelRemainder(a, b, &result, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE, kernelWidth, kernelHeight);
+					MicrokernelRemainder(a, b, resultLocation, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE, kernelWidth, kernelHeight);
 				}
 			}
 			return true;
@@ -500,7 +726,7 @@ matrix_f32 Matrixf32MicrokernelMultiply(const matrix_f32 *a, const matrix_f32 *b
 			float *resultLocation = MatrixGetAddr(&result, nRows * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE);
 			Microkernel(a, b, resultLocation, nRows * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE, kernelWidth, rowRemainder);
 			if (colRemainder) {
-				MicrokernelRemainder(a, b, &result, nRows * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE, kernelWidth, rowRemainder);
+				MicrokernelRemainder(a, b, resultLocation, nRows * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE, kernelWidth, rowRemainder);
 			}
 		}
 	}
@@ -528,3 +754,203 @@ matrix_f32 Matrixf32MicrokernelMultiply(const matrix_f32 *a, const matrix_f32 *b
 	return result;
 }
 
+
+#ifdef __APPLE__
+typedef struct benchmark_endpoint {
+	struct timespec time;
+} benchmark_endpoint;
+
+#else 
+typedef struct benchmark_endpoint {
+	clock_t benchmark_clock;
+} benchmark_endpoint;
+#endif
+
+typedef struct benchmark_results
+{
+	double gflops;
+	double total_time;
+	float max_error;
+	size_t i;
+	size_t j;
+	size_t k;
+	matrix_f32 result;
+} benchmark_results;
+
+void PrintBenchmark(benchmark_results benchmark);
+double GFlops(double nOps, double timeInSeconds);
+benchmark_results TestRandom(size_t size_i, size_t size_j, size_t size_k, int nTrials, const size_t kernelWidth, const size_t kernelHeight);
+benchmark_results TestOnes(size_t size_i, size_t size_j, size_t size_k, int nTrials, const size_t kernelWidth, const size_t kernelHeight);
+int MatrixBenchmarksMain(size_t sizeI, size_t sizeJ, size_t sizeK, int nTrials, const size_t kernelWidth, const size_t kernelHeight);
+
+#ifdef __APPLE__
+struct timespec GetTime()
+{
+	struct timespec Time;
+	clock_gettime(CLOCK_REALTIME, &Time);
+	return Time;
+}
+
+benchmark_endpoint GetBenchmarkEndpoint() {
+	benchmark_endpoint result;
+	result.time = GetTime();
+	return result;
+}
+
+double TimeDiffInSeconds(struct timespec start, struct timespec end)
+{
+	long seconds = end.tv_sec - start.tv_sec;
+	long nanoseconds = end.tv_nsec - start.tv_nsec;
+	return seconds + nanoseconds * 1e-9;
+}
+
+double GetTimeDiffFromEndpoints(benchmark_endpoint start, benchmark_endpoint end) {
+	return TimeDiffInSeconds(start.time, end.time);
+}
+
+#else 
+benchmark_endpoint GetBenchmarkEndpoint() {
+	benchmark_endpoint result;
+	result.benchmark_clock = clock();
+	return result;
+}
+
+double GetTimeDiffFromEndpoints(benchmark_endpoint start, benchmark_endpoint end) {
+	clock_t n_clocks = end.benchmark_clock - start.benchmark_clock;
+	return ((double)n_clocks) / CLOCKS_PER_SEC;
+}
+#endif
+
+void PrintBenchmark(benchmark_results benchmark)
+{
+	printf("===========\n");
+	printf("Matrix multiply %llu %llu %llu\n", benchmark.i, benchmark.j, benchmark.k);
+	printf("GFLOPS: %lf\n", benchmark.gflops);
+	printf("Max error: %lf\n", benchmark.max_error);
+	printf("Total time: %lf\n", benchmark.total_time);
+	printf("===========\n");
+}
+
+
+double GFlops(double nOps, double timeInSeconds)
+{
+	return nOps * 2e-9 / timeInSeconds;
+}
+
+benchmark_results TestRandomNaive(size_t size_i, size_t size_j, size_t size_k, int nTrials, const size_t kernelWidth, const size_t kernelHeight)
+{
+	const matrix_f32 a = RandomMatrixf32(size_i, size_k);
+	const matrix_f32 b = RandomMatrixf32(size_k, size_j);
+	benchmark_results averageResult;
+	averageResult.gflops = 0;
+	averageResult.i = size_i;
+	averageResult.j = size_j;
+	averageResult.k = size_k;
+	averageResult.total_time = 0;
+	double nOps = size_i * size_j * size_k;
+	matrix_f32 targetResult = Matrixf32Multiply(&a, &b);
+	
+	for (int trial = 0; trial < nTrials; trial++)
+	{
+		benchmark_endpoint start = GetBenchmarkEndpoint();
+		matrix_f32 testResult = Matrixf32Multiply(&a, &b);
+		benchmark_endpoint end = GetBenchmarkEndpoint();
+		double timeInSeconds = GetTimeDiffFromEndpoints(start, end);
+		averageResult.total_time += timeInSeconds;
+		averageResult.max_error = GetMaxError(&testResult, &targetResult);
+		averageResult.result = testResult;
+		if (nTrials == 1) {
+			PrintMatrixf32(&targetResult);
+			printf("\n\n\n");
+			Matrixf32MultiplyInplace(&testResult, -1);
+			matrix_f32 diff = Matrixf32Sum(&targetResult, &testResult);
+			PrintMatrixf32(&diff);
+		}
+		free(testResult.contents);
+	}
+	averageResult.gflops = GFlops(nOps * nTrials, averageResult.total_time);
+	return averageResult;
+}
+
+benchmark_results TestRandom(size_t size_i, size_t size_j, size_t size_k, int nTrials, const size_t kernelWidth, const size_t kernelHeight)
+{
+	const matrix_f32 a = RandomMatrixf32(size_i, size_k);
+	const matrix_f32 b = RandomMatrixf32(size_k, size_j);
+	benchmark_results averageResult;
+	averageResult.gflops = 0;
+	averageResult.i = size_i;
+	averageResult.j = size_j;
+	averageResult.k = size_k;
+	averageResult.total_time = 0;
+	double nOps = size_i * size_j * size_k;
+	matrix_f32 targetResult = Matrixf32Multiply(&a, &b);
+	for (int trial = 0; trial < nTrials; trial++)
+	{
+		benchmark_endpoint start = GetBenchmarkEndpoint();
+		matrix_f32 testResult = Matrixf32MicrokernelMultiply(&a, &b, kernelWidth, kernelHeight);
+		benchmark_endpoint end = GetBenchmarkEndpoint();
+		double timeInSeconds = GetTimeDiffFromEndpoints(start, end);
+		averageResult.total_time += timeInSeconds;
+		averageResult.max_error = GetMaxError(&testResult, &targetResult);
+		averageResult.result = testResult;
+		averageResult.gflops += GFlops(nOps, timeInSeconds);
+		if (nTrials == 1) {
+			PrintMatrixf32(&targetResult);
+			printf("\n\n\n");
+			Matrixf32MultiplyInplace(&testResult, -1);
+			matrix_f32 diff = Matrixf32Sum(&targetResult, &testResult);
+			PrintMatrixf32(&diff);
+		}
+		free(testResult.contents);
+	}
+	averageResult.gflops = GFlops(nOps * nTrials, averageResult.total_time);
+	return averageResult;
+}
+
+benchmark_results TestOnes(size_t size_i, size_t size_j, size_t size_k, int nTrials, const size_t kernelWidth, const size_t kernelHeight)
+{
+	benchmark_results averageResult;
+	const matrix_f32 a = Onesf32(size_i, size_k);
+	const matrix_f32 b = Onesf32(size_k, size_j);
+	averageResult.gflops = 0;
+	averageResult.i = size_i;
+	averageResult.j = size_j;
+	averageResult.k = size_k;
+	averageResult.total_time = 0;
+	double nOps = size_i * size_j * size_k;
+	matrix_f32 targetResult = Matrixf32Multiply(&a, &b);
+	for (int trial = 0; trial < nTrials; trial++)
+	{
+		benchmark_endpoint start = GetBenchmarkEndpoint();
+		matrix_f32 testResult = Matrixf32MicrokernelMultiply(&a, &b, kernelWidth, kernelHeight);
+		benchmark_endpoint end = GetBenchmarkEndpoint();
+		double timeInSeconds = GetTimeDiffFromEndpoints(start, end);
+		averageResult.total_time += timeInSeconds;
+		averageResult.max_error = GetMaxError(&testResult, &targetResult);
+		averageResult.result = testResult;
+		if (nTrials == 1) {
+			PrintMatrixf32(&targetResult);
+			printf("\n\n\n");
+			Matrixf32MultiplyInplace(&testResult, -1);
+			matrix_f32 diff = Matrixf32Sum(&targetResult, &testResult);
+			PrintMatrixf32(&diff);
+		}
+    free(testResult.contents);
+	}
+	averageResult.gflops = GFlops(nOps * nTrials, averageResult.total_time);
+	return averageResult;
+}
+
+int MatrixBenchmarksMain(size_t sizeI, size_t sizeJ, size_t sizeK, int nTrials, const size_t kernelWidth, const size_t kernelHeight)
+{
+	printf("Testing Naive multiply on random matrices\n");
+	benchmark_results benchmark = TestRandomNaive(sizeI, sizeJ, sizeK, nTrials, kernelWidth, kernelHeight);
+	PrintBenchmark(benchmark);
+	printf("Testing microkernel multiply on random matrices\n");
+	benchmark = TestRandom(sizeI, sizeJ, sizeK, nTrials, kernelWidth, kernelHeight);
+	PrintBenchmark(benchmark);
+	printf("Testing microkernel multiply on matrices of ones\n");
+	benchmark = TestOnes(sizeI, sizeJ, sizeK, nTrials, kernelWidth, kernelHeight);
+	PrintBenchmark(benchmark);
+	return 0;
+}

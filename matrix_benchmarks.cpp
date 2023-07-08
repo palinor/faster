@@ -1,6 +1,4 @@
-#pragma once
 #include <memory>
-#include <time.h>
 #include "matrix.h"
 #include "matrix_benchmarks.h"
 
@@ -26,7 +24,7 @@ double TimeDiffInSeconds(struct timespec start, struct timespec end)
 }
 
 double GetTimeDiffFromEndpoints(benchmark_endpoint start, benchmark_endpoint end) {
-	return TImeDiffInSeconds(start.time, end.time);
+	return TimeDiffInSeconds(start.time, end.time);
 }
 
 #else 
@@ -149,7 +147,14 @@ benchmark_results TestOnes(size_t size_i, size_t size_j, size_t size_k, int nTri
 		averageResult.total_time += timeInSeconds;
 		averageResult.max_error = GetMaxError(&testResult, &targetResult);
 		averageResult.result = testResult;
-		free(testResult.contents);
+		if (nTrials == 1) {
+			PrintMatrixf32(&targetResult);
+			printf("\n\n\n");
+			Matrixf32MultiplyInplace(&testResult, -1);
+			matrix_f32 diff = Matrixf32Sum(&targetResult, &testResult);
+			PrintMatrixf32(&diff);
+		}
+    free(testResult.contents);
 	}
 	averageResult.gflops = GFlops(nOps * nTrials, averageResult.total_time);
 	return averageResult;
@@ -166,5 +171,17 @@ int MatrixBenchmarksMain(size_t sizeI, size_t sizeJ, size_t sizeK, int nTrials, 
 	printf("Testing microkernel multiply on matrices of ones\n");
 	benchmark = TestOnes(sizeI, sizeJ, sizeK, nTrials, kernelWidth, kernelHeight);
 	PrintBenchmark(benchmark);
+	return 0;
+}
+
+int main() {
+	const size_t sizeI = 8;
+	const size_t sizeJ = 8;
+	const size_t sizeK = 8;
+	const int nTrials = 1;
+	const size_t kernelWidth = 1;
+	// todo(AION): Why does this segfault with kernelHeight = 3?
+	const size_t kernelHeight = 1;
+	MatrixBenchmarksMain(sizeI, sizeJ, sizeK, nTrials, kernelWidth, kernelHeight);
 	return 0;
 }
