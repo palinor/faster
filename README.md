@@ -1,1 +1,2 @@
 # analytics
+A bunch of analytics written in C-style C++. Avoid using all the fancy stuff that C++ provides - part learning experience, part pure obstinance that C++ does sneaky things without telling you
