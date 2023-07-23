@@ -117,25 +117,7 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="basic_math.cpp" />
-    <ClCompile Include="complex.cpp" />
-    <ClCompile Include="linalg.cpp" />
-    <ClCompile Include="matrix.cpp" />
-    <ClCompile Include="matrix_benchmarks.cpp" />
-    <ClCompile Include="multithreading.cpp" />
-    <ClCompile Include="old_matrix.cpp" />
-    <ClCompile Include="savinethreadpool.cpp" />
-    <ClCompile Include="tests.cpp" />
     <ClCompile Include="winmain.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="basic_math.h" />
-    <ClInclude Include="concurrent_queue.h" />
-    <ClInclude Include="linalg.h" />
-    <ClInclude Include="matrix.h" />
-    <ClInclude Include="matrix_benchmarks.h" />
-    <ClInclude Include="savinethreadpool.h" />
-    <ClInclude Include="tests.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

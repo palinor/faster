@@ -4,6 +4,7 @@
 #pragma warning( disable: 4305 4244 6386)
 #endif
 #include <stdio.h>
+#include "threadpool.h"
 
 #define ABS(x) (((x) > 0) ? (x) : -(x))
 #define MAX_FLOAT 1e20
@@ -19,7 +20,7 @@ typedef struct matrix_f32
 	size_t ld;
 } matrix_f32;
 
-void Free(matrix_f32 *a);
+void FreeMatrixf32(matrix_f32 *a);
 
 matrix_f32 Matrixf32Copy(matrix_f32 *a);
 float MatrixGetItem(matrix_f32 *a, size_t i, size_t j);
@@ -49,4 +50,10 @@ matrix_f32 LowerRandomf32(size_t n);
 /*
 If k is not divisible by SIMD_VECTOR_SIZE, handle the addition of the remaining elements
 */
-matrix_f32 Matrixf32MicrokernelMultiply(const matrix_f32 *a, const matrix_f32 *b, const size_t kernelWidth, const size_t kernelHeight);
+matrix_f32 Matrixf32MicrokernelMultiply(
+	const matrix_f32 *a, 
+	const matrix_f32 *b, 
+	const size_t kernelWidth, 
+	const size_t kernelHeight,
+	thread_pool *pool = nullptr
+);

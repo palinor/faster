@@ -1,8 +1,6 @@
 #include <windows.h>
-#include "savinethreadpool.h"
-#include "tests.h"
-#include "matrix_benchmarks.h"
-
+//#include "matrix_benchmarks.cpp"
+#include "aad.cpp"
 /*
 int WINAPI wWinMain(
 	HINSTANCE instance,
@@ -22,16 +20,23 @@ int WINAPI wWinMain(
 	return 0;
 }
 */
-
+/*
 int main() {
 	const size_t sizeI = 256;
 	const size_t sizeJ = 256;
 	const size_t sizeK = 256;
-	const int nTrials = 10000;
+	const int nTrials = 100000;
 	const size_t kernelWidth = 4;
 	const size_t kernelHeight = 4;
-	ThreadPool *pool = ThreadPool::getInstance();
-	pool->start(8);
-	MatrixBenchmarksMain(sizeI, sizeJ, sizeK, nTrials, kernelWidth, kernelHeight);
+	thread_pool pool;
+	size_t nStartingTasks = 256;
+	size_t nThreads = 14;
+	InitThreadPool(&pool, nStartingTasks, nThreads);
+	MatrixBenchmarksMain(sizeI, sizeJ, sizeK, nTrials, kernelWidth, kernelHeight, &pool);
+	StopThreadPool(&pool);
 	return 0;
+}
+*/
+int main() {
+	TestShiftedSabr();
 }
