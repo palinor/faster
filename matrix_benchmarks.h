@@ -28,6 +28,30 @@ typedef struct benchmark_results
 
 void PrintBenchmark(benchmark_results benchmark);
 double GFlops(double nOps, double timeInSeconds);
-benchmark_results TestRandom(size_t size_i, size_t size_j, size_t size_k, int nTrials, const size_t kernelWidth, const size_t kernelHeight);
-benchmark_results TestOnes(size_t size_i, size_t size_j, size_t size_k, int nTrials, const size_t kernelWidth, const size_t kernelHeight);
-int MatrixBenchmarksMain(size_t sizeI, size_t sizeJ, size_t sizeK, int nTrials, const size_t kernelWidth, const size_t kernelHeight);
+benchmark_results TestRandom(
+	size_t size_i, 
+	size_t size_j, 
+	size_t size_k, 
+	int nTrials, 
+	const size_t kernelWidth, 
+	const size_t kernelHeight,
+	thread_pool *pool
+);
+benchmark_results TestOnes(
+	size_t size_i, 
+	size_t size_j, 
+	size_t size_k, 
+	int nTrials, 
+	const size_t kernelWidth, 
+	const size_t kernelHeight,
+	thread_pool *pool
+);
+int MatrixBenchmarksMain(
+	size_t sizeI, 
+	size_t sizeJ, 
+	size_t sizeK, 
+	int nTrials, 
+	const size_t kernelWidth, 
+	const size_t kernelHeight, 
+	thread_pool *pool
+);
