@@ -54,3 +54,8 @@ dkms.conf
 # Compiled binaries
 matrix
 multithreading
+tests
+*.out
+
+# Log files
+*.log

@@ -2,7 +2,6 @@
 #include <memory>
 
 #include "linalg.h"
-#include "matrix.h"
 
 void Swap(float *a, float *b) {
 	float temp = *a;
@@ -132,7 +131,7 @@ int LUFactorize(matrix_f32 *a, size_t *index) {
 			perror("Singular matrix in LUFactorize");
 			return 1;
 		}
-		scaling_values[i] = 1 / largest_element;
+		scaling_values[i] = largest_element;
 	}
 
 	for (size_t j = 0; j < n; j++) {
@@ -151,7 +150,7 @@ int LUFactorize(matrix_f32 *a, size_t *index) {
 			}
 			MATRIX_ITEM(a, i, j) = sum;
 
-			if ((temp = scaling_values[i] * ABS(sum)) >= largest_element) {
+			if ((temp = ABS(sum) / scaling_values[i]) > largest_element) {
 				largest_element = temp;
 				imax = i;
 			}
@@ -169,10 +168,10 @@ int LUFactorize(matrix_f32 *a, size_t *index) {
 		// if (ABS(MATRIX_ITEM(a, j, j)) < MIN_FLOAT) {
 		// 	MATRIX_ITEM(a, j, j) = SIGN(MATRIX_ITEM(a, j, j)) * MIN_FLOAT;
 		// }
-		if (j < n - 1) {
-			temp = 1 / MATRIX_ITEM(a, j, j);
+		if (j != n) {
+			temp = MATRIX_ITEM(a, j, j);
 			for (size_t i = j + 1; i < n; i++) {
-				MATRIX_ITEM(a, i, j) *= temp;
+				MATRIX_ITEM(a, i, j) /= temp;
 			}
 		}
 	}

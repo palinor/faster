@@ -1,8 +1,7 @@
-#pragma once
 #include <ctime>
 #include <cstdlib>
 #include <memory>
-#include "matrix.cpp"
+#include "matrix.h"
 
 #ifdef __APPLE__
 typedef struct benchmark_endpoint {
@@ -64,7 +63,7 @@ struct benchmark_results
 void PrintBenchmark(benchmark_results benchmark)
 {
 	printf("===========\n");
-	printf("Matrix multiply %llu %llu %llu\n", benchmark.i, benchmark.j, benchmark.k);
+	printf("Matrix multiply %lu %lu %lu\n", benchmark.i, benchmark.j, benchmark.k);
 	printf("GFLOPS: %lf\n", benchmark.gflops);
 	printf("Max error: %lf\n", benchmark.max_error);
 	printf("Total time: %lf\n", benchmark.total_time);
@@ -238,14 +237,20 @@ int MatrixBenchmarksMain(
 	return 0;
 }
 
+#ifdef IS_MAIN
 int main() {
-	const size_t sizeI = 8;
-	const size_t sizeJ = 8;
-	const size_t sizeK = 8;
-	const int nTrials = 1;
-	const size_t kernelWidth = 1;
-	// todo(AION): Why does this segfault with kernelHeight = 3?
-	const size_t kernelHeight = 1;
-	MatrixBenchmarksMain(sizeI, sizeJ, sizeK, nTrials, kernelWidth, kernelHeight);
+	const size_t sizeI = 256;
+	const size_t sizeJ = 256;
+	const size_t sizeK = 256;
+	const int nTrials = 1000;
+	const size_t kernelWidth = 4;
+	const size_t kernelHeight = 16;
+	thread_pool pool;
+	size_t nStartingTasks = 256;
+	size_t nThreads = 14;
+	InitThreadPool(&pool, nStartingTasks, nThreads);
+	MatrixBenchmarksMain(sizeI, sizeJ, sizeK, nTrials, kernelWidth, kernelHeight, &pool);
+	StopThreadPool(&pool);
 	return 0;
 }
+#endif

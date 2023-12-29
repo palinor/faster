@@ -50,7 +50,8 @@ matrix_f32 LowerRandomf32(size_t n);
 /*
 If k is not divisible by SIMD_VECTOR_SIZE, handle the addition of the remaining elements
 */
-matrix_f32 Matrixf32MicrokernelMultiply(
+void Matrixf32MicrokernelMultiply(
+	matrix_f32 *result,
 	const matrix_f32 *a, 
 	const matrix_f32 *b, 
 	const size_t kernelWidth, 

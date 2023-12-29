@@ -1,27 +1,8 @@
-#include <mutex>
-
-using namespace std::chrono_literals;
+#include "threadpool.h"
 
 // This should all be doable without going through futures and promises
 // How much of the cpp features can I remove from my multithreading and still have it work?
 
-typedef void concurrent_taskqueue_callback(void *taskInfo);
-
-struct taskinfo_wrapper {
-	void *taskInfo_;
-	concurrent_taskqueue_callback *taskFunction_;
-};
-
-struct concurrent_taskinfo_queue {
-	taskinfo_wrapper *tasks_;
-	size_t volatile startingMaxSize_;
-	size_t volatile maxSize_;
-	size_t volatile currentSize_;
-	size_t volatile currentHead_;
-	std::mutex mutex_;
-	std::condition_variable cv_;
-	bool interrupt_;
-};
 
 void InitConcurrentTaskInfoQueue(concurrent_taskinfo_queue *queue, size_t maxSize) {
 	queue->tasks_ = (taskinfo_wrapper *)malloc(maxSize * sizeof(taskinfo_wrapper));
@@ -44,7 +25,8 @@ void ResetConcurrentTaskQueue(concurrent_taskinfo_queue *queue) {
 
 void PushTaskToQueue(void *taskInfo, concurrent_taskqueue_callback *taskFunction, concurrent_taskinfo_queue *queue) {
 	queue->mutex_.lock();
-	if (queue->currentSize_ == queue->maxSize_) {
+	size_t currentSize = queue->currentSize_;
+	if (currentSize == queue->maxSize_) {
 		size_t newSize = queue->maxSize_ * 2 + 1;
 		taskinfo_wrapper *newTasks = reinterpret_cast<taskinfo_wrapper *>(realloc(queue->tasks_, newSize * sizeof(taskinfo_wrapper)));
 		if (!newTasks) {
@@ -56,7 +38,7 @@ void PushTaskToQueue(void *taskInfo, concurrent_taskqueue_callback *taskFunction
 	taskinfo_wrapper *nextTask = queue->tasks_ + queue->currentSize_;
 	nextTask->taskInfo_ = taskInfo;
 	nextTask->taskFunction_ = taskFunction;
-	queue->currentSize_++;
+	queue->currentSize_ = currentSize + 1;
 	queue->cv_.notify_one();
 	queue->mutex_.unlock();
 }
@@ -67,6 +49,7 @@ inline bool IsQueueEmpty(concurrent_taskinfo_queue *queue) {
 
 volatile taskinfo_wrapper *PopTaskFromQueue(concurrent_taskinfo_queue *queue) {
 	std::unique_lock<std::mutex> lk(queue->mutex_);
+	size_t currentHead = queue->currentHead_;
 	while (!(queue->interrupt_) && IsQueueEmpty(queue)) {
 		queue->cv_.wait(lk);
 	}
@@ -77,7 +60,7 @@ volatile taskinfo_wrapper *PopTaskFromQueue(concurrent_taskinfo_queue *queue) {
 		return nullptr;
 	}
 	volatile taskinfo_wrapper *returnTask = queue->tasks_ + queue->currentHead_;
-	queue->currentHead_++;
+	queue->currentHead_ = currentHead + 1;
 	return returnTask;
 }
 
@@ -95,20 +78,12 @@ taskinfo_wrapper *TryPopTaskFromQueue(concurrent_taskinfo_queue *queue) {
 		queue->mutex_.unlock();
 		return nullptr;
 	}
-	taskinfo_wrapper *resultTask = queue->tasks_ + queue->currentHead_++;
+	size_t currentHead = queue->currentHead_ +1;
+	queue->currentHead_ = currentHead;
+	taskinfo_wrapper *resultTask = queue->tasks_ + currentHead;
 	queue->mutex_.unlock();
 	return resultTask;
 }
-
-
-struct thread_pool {
-	std::thread *threads_ = nullptr;
-	volatile size_t nTotalThreads_ = 0;
-	volatile bool isActive_ = false;
-	volatile bool isInterrupt_ = false;
-	concurrent_taskinfo_queue queue_;
-};
-
 
 void RunThreadFunc(thread_pool *pool) {
 	while (!(pool->isInterrupt_)) {

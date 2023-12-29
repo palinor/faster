@@ -9,7 +9,7 @@
 #include <cassert>
 #include <cstdlib>
 
-#include "threadpool.cpp"
+#include "threadpool.h"
 
 #define MAX_FLOAT 1e20
 #define MIN_FLOAT 1e-12
@@ -24,7 +24,7 @@ struct matrix_f32
 };
 
 
-inline void FreeMatrixf32(matrix_f32 *a) {
+void FreeMatrixf32(matrix_f32 *a) {
 	free(a->contents);
 }
 
@@ -45,8 +45,7 @@ inline float *MatrixGetAddr(const matrix_f32 *a, size_t i, size_t j)
 inline float FAbs(float x) {
 	if (x < 0) {
 		return -x;
-	}
-	else {
+	} else {
 		return x;
 	}
 }
@@ -54,8 +53,7 @@ inline float FAbs(float x) {
 inline int IAbs(int x) {
 	if (x < 0) {
 		return -x;
-	}
-	else {
+	} else {
 		return x;
 	}
 }
@@ -135,15 +133,17 @@ int Matrixf32MultiplyToTarget(matrix_f32 *result, const matrix_f32 *a, const mat
 			// #pragma clang loop vectorize_width(8) // interleave_count(4)
 			for (size_t j = 0; j < result->cols; j++)
 			{
-				//todo(AION): Have this swap depending on the platform we compile on.
-				//resultRow[j] += Aik * bRow[j];
+				#ifdef __APPLE__
+				resultRow[j] += Aik * bRow[j];
 				/*
 				This part is actually out of line with the microkernel loop (no difference in -Ofast, but visible in other compile modes)
 				The above lines up just fine in all
 
 				BUUUUUUUT.... not on windows. So we actually need to swap depending on the compiler. Lol.
 				*/
+				#else
 				resultRow[j] = fma(bRow[j], Aik, resultRow[j]);
+				#endif
 			}
 		}
 	}
@@ -300,7 +300,7 @@ Internal block for matrix multiplication - compute the result in blocks of isze 
 #ifdef __APPLE__
 // ARM implimentation
 #define SIMD_VECTOR_SIZE 4
-void Microkernel(const matrix_f32 *a, const matrix_f32 *b, float *resultLocation, size_t resultRow, size_t resultCol, size_t kernelWidth, size_t kernelHeight)
+void Microkernel(matrix_f32 *resultMatrix, const matrix_f32 *a, const matrix_f32 *b, size_t resultRow, size_t resultCol, size_t kernelWidth, size_t kernelHeight)
 {
 	assert(a->cols == b->rows);
 	assert(kernelWidth * kernelHeight < 128);
@@ -334,7 +334,26 @@ void Microkernel(const matrix_f32 *a, const matrix_f32 *b, float *resultLocation
 			}
 		}
 	}
-
+	// If k is not divisible by SIMD_VECTOR_SIZE, handle the remainder here
+	size_t remainder = a->cols % SIMD_VECTOR_SIZE;
+	if (remainder) {
+		for (size_t i = 0; i < kernelHeight; i++) {
+			float32x4_t aRemainder_i = vld1q_f32(MatrixGetAddr(a, resultRow + i, a->cols - remainder));
+			for (size_t j = 0; j < kernelWidth; j++) {
+				float32x4_t bRemainderElems_0j = vld1q_f32(MatrixGetAddr(b, a->cols - remainder, resultCol + SIMD_VECTOR_SIZE * j));
+				resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bRemainderElems_0j, aRemainder_i, 0);
+				if (remainder > 1) {
+					float32x4_t bRemainderElems_1j = vld1q_f32(MatrixGetAddr(b, a->cols - remainder + 1, resultCol + SIMD_VECTOR_SIZE * j));
+					resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bRemainderElems_1j, aRemainder_i, 1);
+				}
+				if (remainder > 2) {
+					float32x4_t bRemainderElems_2j = vld1q_f32(MatrixGetAddr(b, a->cols - remainder + 2, resultCol + SIMD_VECTOR_SIZE * j));
+					resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bRemainderElems_2j, aRemainder_i, 2);
+				}
+			}
+		}
+	}
+	float *resultLocation = MatrixGetAddr(resultMatrix, resultRow, resultCol);
 	for (size_t i = 0; i < kernelHeight; i++)
 	{
 		for (size_t j = 0; j < kernelWidth; j++)
@@ -346,7 +365,6 @@ void Microkernel(const matrix_f32 *a, const matrix_f32 *b, float *resultLocation
 
 /*
 If k is not divisible by SIMD_VECTOR_SIZE, handle the addition of the remaining elements
-*/
 
 void MicrokernelRemainder(const matrix_f32 *a, const matrix_f32 *b, float *resultLocation, size_t resultRow, size_t resultCol, size_t kernelWidth, size_t kernelHeight)
 {
@@ -385,7 +403,7 @@ void MicrokernelRemainder(const matrix_f32 *a, const matrix_f32 *b, float *resul
 			vst1q_f32(resultLocation + i * b->cols + j * SIMD_VECTOR_SIZE, resultElems[i * kernelWidth + j]);
 		}
 	}
-}
+} */
 #else
 // AMD64 implementation
 #define SIMD_VECTOR_SIZE 8 
@@ -616,44 +634,64 @@ void Matrixf32MicrokernelMultiply(
 	const size_t nRows = a->rows / kernelHeight;
 	const size_t rowRemainder = a->rows % kernelHeight;
 	const size_t nCols = b->cols / (kernelWidth * SIMD_VECTOR_SIZE);
-	const size_t colRemainder = a->cols % SIMD_VECTOR_SIZE;
+	bool skipMainBlock = nCols == 0; // if we don't have enough columns, skip the vectorized block
+	// const size_t colRemainder = a->cols % SIMD_VECTOR_SIZE;
 	// task_handle *futures = (task_handle *)malloc(sizeof(task_handle) * nRows);
 	// Do the main block
-	for (int row = 0; row < nRows; row++) {
-		// Each row defines a task. These are then run in parallel if there is a thread pool
-		// otherwise they are run sequentially 
-		/*
-		auto rowTask = [=, &result]() {
-			for (size_t col = 0; col < nCols; col++) {
-				float *resultLocation = MatrixGetAddr(&result, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE);
-				Microkernel(a, b, resultLocation, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE, kernelWidth, kernelHeight);
-				if (colRemainder) {
-					MicrokernelRemainder(a, b, resultLocation, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE, kernelWidth, kernelHeight);
+	if (!skipMainBlock) {
+		for (size_t row = 0; row < nRows; row++) {
+			// Each row defines a task. These are then run in parallel if there is a thread pool
+			// otherwise they are run sequentially 
+			/*
+			auto rowTask = [=, &result]() {
+				for (size_t col = 0; col < nCols; col++) {
+					float *resultLocation = MatrixGetAddr(&result, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE);
+					Microkernel(a, b, resultLocation, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE, kernelWidth, kernelHeight);
+					if (colRemainder) {
+						MicrokernelRemainder(a, b, resultLocation, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE, kernelWidth, kernelHeight);
+					}
 				}
+				return true;
+			}; */
+			matrix_microkernel_row_task_info *taskInfo = (matrix_microkernel_row_task_info *)malloc(sizeof(matrix_microkernel_row_task_info));
+			taskInfo->kernelWidth = kernelWidth;
+			taskInfo->kernelHeight = kernelHeight;
+			taskInfo->leftMatrix = a;
+			taskInfo->rightMatrix = b;
+			taskInfo->resultRowNumber = row;
+			taskInfo->resultMatrix = result;
+
+
+			if (pool) {
+				PushTaskToQueue(taskInfo, &MatrixMicrokernelRowTask, &(pool->queue_));
+				// task_handle rowFuture = PushTaskToQueue(rowTask, &(pool->queue_));
+				// new(futures + row) task_handle(std::move(rowFuture));
+			} else {
+				MatrixMicrokernelRowTask(taskInfo);
 			}
-			return true;
-		}; */
-		matrix_microkernel_row_task_info *taskInfo = (matrix_microkernel_row_task_info *)malloc(sizeof(matrix_microkernel_row_task_info));
-		taskInfo->kernelWidth = kernelWidth;
-		taskInfo->kernelHeight = kernelHeight;
-		taskInfo->leftMatrix = a;
-		taskInfo->rightMatrix = b;
-		taskInfo->resultRowNumber = row;
-		taskInfo->resultMatrix = result;
+		}
+		for (size_t row = 0; row < rowRemainder; row++) {
 
+			matrix_microkernel_row_task_info *taskInfo = (matrix_microkernel_row_task_info *)malloc(sizeof(matrix_microkernel_row_task_info));
+			taskInfo->kernelWidth = kernelWidth;
+			taskInfo->kernelHeight = 1;
+			taskInfo->leftMatrix = a;
+			taskInfo->rightMatrix = b;
+			taskInfo->resultRowNumber = nRows * kernelHeight + row;
+			taskInfo->resultMatrix = result;
 
+			if (pool) {
+				PushTaskToQueue(taskInfo, &MatrixMicrokernelRowTask, &(pool->queue_));
+				// task_handle rowFuture = PushTaskToQueue(rowTask, &(pool->queue_));
+				// new(futures + row) task_handle(std::move(rowFuture));
+			} else {
+				MatrixMicrokernelRowTask(taskInfo);
+			}
+		}	
 		if (pool) {
-			PushTaskToQueue(taskInfo, &MatrixMicrokernelRowTask, &(pool->queue_));
-			// task_handle rowFuture = PushTaskToQueue(rowTask, &(pool->queue_));
-			// new(futures + row) task_handle(std::move(rowFuture));
+			ThreadPoolActiveWait(pool);
+			ResetConcurrentTaskQueue(&(pool->queue_));
 		}
-		else {
-			MatrixMicrokernelRowTask(&taskInfo);
-		}
-	}
-	if (pool) {
-		ThreadPoolActiveWait(pool);
-		ResetConcurrentTaskQueue(&(pool->queue_));
 	}
 	// Clean up what is left (columns)
 	if (nCols * kernelWidth * SIMD_VECTOR_SIZE < b->cols)
@@ -669,7 +707,7 @@ void Matrixf32MicrokernelMultiply(
 				for (size_t j = nCols * kernelWidth * SIMD_VECTOR_SIZE; j < b->cols; j++)
 				{
 					//todo(AION): same as above, this needs to be compiler dependant to be in line
-					//resultRow[j] += Aik * bRow[j];
+					// resultRow[j] += Aik * bRow[j];
 					resultRow[j] = fma(bRow[j], Aik, resultRow[j]);
 
 				}

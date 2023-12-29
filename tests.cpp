@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include "basic_math.h"
 #include "linalg.h"
+#include "matrix_benchmarks.h"
 
 int LogErrorExact(float expectedOutput, float output, float *inputs, size_t nInputs)
 {
@@ -32,7 +33,7 @@ int LogErrorLeq(float expectedOutput, float output, float errorTol, float *input
 	return error;
 }
 
-void RunTestFunction(int testF(void), char *fName)
+void RunTestFunction(int testF(void), const char *fName)
 
 {
 	int nErrors = testF();
@@ -105,7 +106,12 @@ int TestGaussJordan() {
 		matrix_f32 a = RandomMatrixf32(rows, rows);
 		matrix_f32 aInv = Matrixf32Copy(&a);
 		GaussJordan(&aInv, NULL);
-		matrix_f32 result = Matrixf32MicrokernelMultiply(&a, &aInv, 4, 4);
+		matrix_f32 result;
+		result.rows = a.rows;
+		result.cols = aInv.cols;
+		result.ld = result.cols;
+		result.contents = (float *)calloc(result.rows * result.cols, sizeof(float));
+		Matrixf32MicrokernelMultiply(&result, &a, &aInv, 4, 4, nullptr);
 		float maxError = GetMaxError(&id, &result);
 		float relErrorTol = 1e-6;
 		float errorTol = ((float)rows) * relErrorTol;
@@ -168,16 +174,40 @@ void MatrixLUPopulate(matrix_f32 *lu, matrix_f32 *l, matrix_f32 *u) {
 	}
 }
 
+matrix_f32 Matrixf32DumbMultiply(matrix_f32 *a, matrix_f32 *b) {
+	matrix_f32 result;
+	result.rows = a->rows;
+	result.cols = b->cols;
+	result.ld = a->ld;
+	result.contents = (float *)calloc(result.rows * result.cols, sizeof(float));
+	for (size_t i = 0; i < a->rows; i++) {
+		for (size_t j = 0; j < b->cols; j++) {
+			float thisElem = 0;
+			for (size_t k = 0; k < a->cols; k++) {
+				thisElem += MATRIX_ITEM(a, i, k) * MATRIX_ITEM(b, k, j);
+			}
+			MATRIX_ITEM(&result, i, j) = thisElem;
+		}
+	}
+	return result;
+}
 
 int TestLUFactorize() {
-	size_t n = 100;
+	size_t n = 6;
 	int nErrors = 0;
 	matrix_f32 l = LowerRandomf32(n);
-	for (size_t i = 0; i < n; i++) {
-		MATRIX_ITEM(&l, i, i) = 1;  // Enforce L to be unitary for solution uniqueness
-	}
 	matrix_f32 u = UpperRandomf32(n);
-	matrix_f32 a = Matrixf32Multiply(&l, &u);
+	for (size_t i = 0; i < n; i++) {
+		MATRIX_ITEM(&u, i, i) = 1;  // Enforce U to be unitary for solution uniqueness
+	}
+	matrix_f32 a;
+	a.rows = n;
+	a.cols = n;
+	a.ld = n;
+	a.contents = (float *)calloc(n * n, sizeof(float));
+	// matrix_f32 a = Matrixf32Multiply(&l, &u);
+	// Matrixf32MicrokernelMultiply(&a, &l, &u, 2, 2, nullptr);
+	a = Matrixf32DumbMultiply(&l, &u);
 	matrix_f32 aCopy = Matrixf32Copy(&a);
 	size_t *index = reinterpret_cast<size_t*>(malloc(n * sizeof(size_t)));
 	if (!index) {
@@ -191,14 +221,20 @@ int TestLUFactorize() {
 			Swap(MatrixGetAddr(&aCopy, index[i], j), MatrixGetAddr(&aCopy, i, j));
 		}
 	}
-	matrix_f32 result = Matrixf32Multiply(&l, &u);
+	matrix_f32 result;
+	result.rows = n;
+	result.cols = n;
+	result.ld = n;
+	result.contents = (float *)calloc(n * n, sizeof(float));
+	// matrix_f32 result = Matrixf32Multiply(&l, &u);
+	Matrixf32MicrokernelMultiply(&result, &l, &u, 2, 4, nullptr);
 	float relErrorTol = 1e-8;
 	float errorTol = ((float)n) * relErrorTol;
 	float maxError = GetMaxError(&aCopy, &result);
 	int doesNotPass = LogErrorLeq(0, maxError, errorTol, 0, 0);
 		if (!doesNotPass) printf("Ok at %f\n", relErrorTol);
 		nErrors += doesNotPass;
-		if (n < 10) {
+		if (n < 16) {
 			printf("Result: \n");
 			Matrixf32MultiplyInplace(&aCopy, -1);
 			matrix_f32 error = Matrixf32Sum(&aCopy, &result);
@@ -207,15 +243,21 @@ int TestLUFactorize() {
 	return nErrors;
 }
 
-
+#ifdef IS_MAIN
 int main()
 {
-	RunTestFunction(TestFSqrt, "FSqrt");
-	RunTestFunction(TestFPow, "FPow");
-	RunTestFunction(TestGaussJordan, "GaussJordan");
-	RunTestFunction(TestLUFactorize, "LU Factorize");
+	const char fsqrtName[6] = "FSqrt";
+	const char fpowName[5] = "FPow";
+	const char gaussJordanName[12] = "GaussJordan";
+	const char LUFactorizeName[13] = "LU Factorize";
+	TestOnes(10, 10, 10, 1, 2, 4, nullptr);
+	TestRandom(10, 10, 10, 1, 2, 4, nullptr);
+	RunTestFunction(TestFSqrt, fsqrtName);
+	RunTestFunction(TestFPow, fpowName);
+	RunTestFunction(TestGaussJordan, gaussJordanName);
+	RunTestFunction(TestLUFactorize, LUFactorizeName);
 	// RunTestFunction(TestLU, "LUFactorize + LUBackSub");
 	return 0;
 }
-
+#endif
 
