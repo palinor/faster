@@ -1,138 +1,134 @@
 #include "threadpool.h"
-
 // This should all be doable without going through futures and promises
 // How much of the cpp features can I remove from my multithreading and still have it work?
 
-
-void InitConcurrentTaskInfoQueue(concurrent_taskinfo_queue *queue, size_t maxSize) {
-	queue->tasks_ = (taskinfo_wrapper *)malloc(maxSize * sizeof(taskinfo_wrapper));
-	queue->maxSize_ = maxSize;
-	queue->startingMaxSize_ = maxSize;
-	queue->currentSize_ = 0;
-	queue->currentHead_ = 0;
-	queue->interrupt_ = false;
+void concurrentTaskQueueInit(ConcurrentTaskQueue *queue, size_t max_size) {
+	queue->tasks = (TaskInfoWrapper *)malloc(max_size * sizeof(TaskInfoWrapper));
+	queue->max_size = max_size;
+	queue->starting_max_size = max_size;
+	queue->current_size = 0;
+	queue->current_head = 0;
+	queue->is_interrupted = false;
 }
 
-void ResetConcurrentTaskQueue(concurrent_taskinfo_queue *queue) {
-	free(queue->tasks_);
-	queue->tasks_ = (taskinfo_wrapper *)malloc((queue->startingMaxSize_) * sizeof(taskinfo_wrapper));
-	queue->maxSize_ = queue->startingMaxSize_;
-	queue->currentSize_ = 0;
-	queue->currentHead_ = 0;
-	queue->interrupt_ = false;
+void concurrentTaskQueueReset(ConcurrentTaskQueue *queue) {
+	free(queue->tasks);
+	queue->tasks = (TaskInfoWrapper *)malloc((queue->starting_max_size) * sizeof(TaskInfoWrapper));
+	queue->max_size = queue->starting_max_size;
+	queue->current_size = 0;
+	queue->current_head = 0;
+	queue->is_interrupted = false;
 }
 
 
-void PushTaskToQueue(void *taskInfo, concurrent_taskqueue_callback *taskFunction, concurrent_taskinfo_queue *queue) {
-	queue->mutex_.lock();
-	size_t currentSize = queue->currentSize_;
-	if (currentSize == queue->maxSize_) {
-		size_t newSize = queue->maxSize_ * 2 + 1;
-		taskinfo_wrapper *newTasks = reinterpret_cast<taskinfo_wrapper *>(realloc(queue->tasks_, newSize * sizeof(taskinfo_wrapper)));
-		if (!newTasks) {
+void concurrentTaskQueuePush(void *task_info, ConcurrentTaskQueueCallback *task_function, ConcurrentTaskQueue *queue) {
+	queue->mutex.lock();
+	if (queue->current_size == queue->max_size) {
+		size_t new_size = queue->max_size * 2 + 1;
+		TaskInfoWrapper *new_tasks = reinterpret_cast<TaskInfoWrapper *>(realloc(queue->tasks, new_size * sizeof(TaskInfoWrapper)));
+		if (!new_tasks) {
 			exit(1);
 		}
-		queue->tasks_ = newTasks;
-		queue->maxSize_ = newSize;
+		queue->tasks = new_tasks;
+		queue->max_size = new_size;
 	}
-	taskinfo_wrapper *nextTask = queue->tasks_ + queue->currentSize_;
-	nextTask->taskInfo_ = taskInfo;
-	nextTask->taskFunction_ = taskFunction;
-	queue->currentSize_ = currentSize + 1;
-	queue->cv_.notify_one();
-	queue->mutex_.unlock();
+	TaskInfoWrapper *next_task = queue->tasks + queue->current_size;
+	next_task->task_info = task_info;
+	next_task->task_function = task_function;
+	queue->current_size++;
+	queue->cv.notify_one();
+	queue->mutex.unlock();
 }
 
-inline bool IsQueueEmpty(concurrent_taskinfo_queue *queue) {
-	return (queue->currentHead_ == queue->currentSize_);
+inline bool concurrentTaskQueueIsEmpty(ConcurrentTaskQueue *queue) {
+	return (queue->current_head == queue->current_size);
 }
 
-volatile taskinfo_wrapper *PopTaskFromQueue(concurrent_taskinfo_queue *queue) {
-	std::unique_lock<std::mutex> lk(queue->mutex_);
-	size_t currentHead = queue->currentHead_;
-	while (!(queue->interrupt_) && IsQueueEmpty(queue)) {
-		queue->cv_.wait(lk);
+volatile TaskInfoWrapper *concurrentTaskQueuePopTask(ConcurrentTaskQueue *queue) {
+	std::unique_lock<std::mutex> lk(queue->mutex);
+	while (!(queue->is_interrupted) && concurrentTaskQueueIsEmpty(queue)) {
+		queue->cv.wait(lk);
 	}
-	if ((queue->interrupt_)) {
+	if ((queue->is_interrupted)) {
 		return nullptr;
 	}
-	if (IsQueueEmpty(queue)) {
+	if (concurrentTaskQueueIsEmpty(queue)) {
 		return nullptr;
 	}
-	volatile taskinfo_wrapper *returnTask = queue->tasks_ + queue->currentHead_;
-	queue->currentHead_ = currentHead + 1;
-	return returnTask;
+	volatile TaskInfoWrapper *return_task = queue->tasks + queue->current_head;
+	queue->current_head++;
+	return return_task;
 }
 
-void InterruptConcurrentTaskInfoQueue(concurrent_taskinfo_queue *input) {
-	input->mutex_.lock();
-	input->interrupt_ = true;
-	input->mutex_.unlock();
-	input->cv_.notify_all();
+void concurrentTaskQueueInterrupt(ConcurrentTaskQueue *queue) {
+	queue->mutex.lock();
+	queue->is_interrupted = true;
+	queue->mutex.unlock();
+	queue->cv.notify_all();
 }
 
 
-taskinfo_wrapper *TryPopTaskFromQueue(concurrent_taskinfo_queue *queue) {
-	queue->mutex_.lock();
-	if (IsQueueEmpty(queue)) {
-		queue->mutex_.unlock();
+TaskInfoWrapper *concurrentTaskQueueTryPop(ConcurrentTaskQueue *queue) {
+	queue->mutex.lock();
+	if (concurrentTaskQueueIsEmpty(queue)) {
+		queue->mutex.unlock();
 		return nullptr;
 	}
-	size_t currentHead = queue->currentHead_ +1;
-	queue->currentHead_ = currentHead;
-	taskinfo_wrapper *resultTask = queue->tasks_ + currentHead;
-	queue->mutex_.unlock();
-	return resultTask;
+	TaskInfoWrapper *result_task = queue->tasks + queue->current_head++;
+	queue->mutex.unlock();
+	return result_task;
 }
 
-void RunThreadFunc(thread_pool *pool) {
-	while (!(pool->isInterrupt_)) {
-		volatile taskinfo_wrapper *taskWrapper = PopTaskFromQueue(&(pool->queue_));
-		if (!(pool->isInterrupt_) && !!(taskWrapper)) {
-			taskWrapper->taskFunction_(taskWrapper->taskInfo_);
+
+
+void threadPoolRunThreadFunc(ThreadPool *pool) {
+	while (!(pool->is_interrupted)) {
+		volatile TaskInfoWrapper *task_wrapper = concurrentTaskQueueTryPop(&(pool->task_queue));
+		if (!(pool->is_interrupted) && !!(task_wrapper)) {
+			task_wrapper->task_function(task_wrapper->task_info);
 		}
 	}
 }
 
-void InitThreadPool(thread_pool *pool, size_t initQueueSize, size_t nThreads) {
-	pool->isInterrupt_ = false;
-	if (pool->threads_) {
-		free(pool->threads_);
+void threadPoolInit(ThreadPool *pool, size_t starting_queue_size, size_t n_threads) {
+	pool->is_interrupted = false;
+	if (pool->threads) {
+		free(pool->threads);
 	}
-	pool->threads_ = (std::thread *)malloc(nThreads * sizeof(std::thread));
-	pool->nTotalThreads_ = nThreads;
-	for (size_t threadNumber = 0; threadNumber < nThreads; threadNumber++) {
-		new(pool->threads_ + threadNumber) std::thread(RunThreadFunc, pool);
+	pool->threads = (std::thread *)malloc(n_threads * sizeof(std::thread));
+	pool->number_of_total_threads = n_threads;
+	for (size_t thread_number = 0; thread_number < n_threads; thread_number++) {
+		new(pool->threads + thread_number) std::thread(threadPoolRunThreadFunc, pool);
 	}
-	InitConcurrentTaskInfoQueue(&(pool->queue_), initQueueSize);
-	pool->isActive_ = true;
+	concurrentTaskQueueInit(&(pool->task_queue), starting_queue_size);
+	pool->is_active = true;
 }
 
-void StopThreadPool(thread_pool *pool) {
-	if (pool->isActive_) {
-		pool->isInterrupt_ = true;
-		InterruptConcurrentTaskInfoQueue(&(pool->queue_));
+void threadPoolInterrupt(ThreadPool *pool) {
+	if (pool->is_active) {
+		pool->is_interrupted = true;
+		concurrentTaskQueueInterrupt(&(pool->task_queue));
 	}
-	for (size_t threadNumber = 0; threadNumber < pool->nTotalThreads_; threadNumber++) {
-		pool->threads_[threadNumber].join();
+	for (size_t thread_number = 0; thread_number < pool->number_of_total_threads; thread_number++) {
+		pool->threads[thread_number].join();
 	}
-	free(pool->threads_);
-	pool->isActive_ = false;
-	pool->isInterrupt_ = false;
-	pool->queue_.interrupt_ = false;
-	if (pool->queue_.tasks_) {
-		free(pool->queue_.tasks_);
+	free(pool->threads);
+	pool->is_active = false;
+	pool->is_interrupted = false;
+	pool->task_queue.is_interrupted = false;
+	if (pool->task_queue.tasks) {
+		free(pool->task_queue.tasks);
 	}
 }
 
-bool ThreadPoolActiveWait(thread_pool *pool) {
-	bool iDidWork = false;
-	while (!IsQueueEmpty(&(pool->queue_))) {
-		if (volatile taskinfo_wrapper *taskWrapper = TryPopTaskFromQueue(&(pool->queue_))) {
-			taskWrapper->taskFunction_(taskWrapper->taskInfo_);
-			iDidWork = true;
+bool threadPoolActiveWait(ThreadPool *pool) {
+	bool i_did_work = false;
+	while (!concurrentTaskQueueIsEmpty(&(pool->task_queue))) {
+		if (volatile TaskInfoWrapper *task_wrapper = concurrentTaskQueueTryPop(&(pool->task_queue))) {
+			task_wrapper->task_function(task_wrapper->task_info);
+			i_did_work = true;
 		}
 	}
-	return iDidWork;
+	return i_did_work;
 }
 

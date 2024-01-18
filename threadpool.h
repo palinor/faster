@@ -1,52 +1,52 @@
 #pragma once
 #include <mutex>
 #include <thread>
+#include "platform_build.h"
 
 using namespace std::chrono_literals;
 
-typedef void concurrent_taskqueue_callback(void *taskInfo);
+typedef void ConcurrentTaskQueueCallback(void *task_info);
 
-struct taskinfo_wrapper {
-	void *taskInfo_;
-	concurrent_taskqueue_callback *taskFunction_;
+struct TaskInfoWrapper {
+	void *task_info;
+	ConcurrentTaskQueueCallback *task_function;
 };
 
-struct concurrent_taskinfo_queue {
-	taskinfo_wrapper *tasks_;
-	size_t volatile startingMaxSize_;
-	size_t volatile maxSize_;
-	size_t volatile currentSize_;
-	size_t volatile currentHead_;
-	std::mutex mutex_;
-	std::condition_variable cv_;
-	bool interrupt_;
+struct ConcurrentTaskQueue {
+	TaskInfoWrapper *tasks;
+	size_t volatile starting_max_size;
+	size_t volatile max_size;
+	size_t volatile current_size;
+	size_t volatile current_head;
+	std::mutex mutex;
+	std::condition_variable cv;
+	bool is_interrupted;
 };
 
-struct thread_pool {
-	std::thread *threads_ = nullptr;
-	volatile size_t nTotalThreads_ = 0;
-	volatile bool isActive_ = false;
-	volatile bool isInterrupt_ = false;
-	concurrent_taskinfo_queue queue_;
+struct ThreadPool {
+	std::thread *threads = nullptr;
+	volatile size_t number_of_total_threads = 0;
+	volatile bool is_active = false;
+	volatile bool is_interrupted = false;
+	ConcurrentTaskQueue task_queue;
 };
 
-void InitThreadPool(
-	thread_pool *input, 
-	size_t initQueueSize,
-	size_t nThreads = std::thread::hardware_concurrency() - 1
+void threadPoolInit(
+	ThreadPool *input, 
+	size_t starting_queue_size,
+	size_t number_of_threads = std::thread::hardware_concurrency() - 1
 );
-void RunThreadFunc(thread_pool *pool);
-void StopThreadPool(thread_pool *pool);
-bool ThreadPoolActiveWait(thread_pool *pool);
-void InitConcurrentTaskInfoQueue(concurrent_taskinfo_queue *queue, size_t maxSize);
-void ResetConcurrentTaskQueue(concurrent_taskinfo_queue *queue);
-void PushTaskToQueue(void *taskInfo, concurrent_taskqueue_callback *taskFunction, concurrent_taskinfo_queue *queue);
-inline bool IsQueueEmpty(concurrent_taskinfo_queue *queue);
-volatile taskinfo_wrapper *PopTaskFromQueue(concurrent_taskinfo_queue *queue);
-void InterruptConcurrentTaskInfoQueue(concurrent_taskinfo_queue *input);
-taskinfo_wrapper *TryPopTaskFromQueue(concurrent_taskinfo_queue *queue);
-void RunThreadFunc(thread_pool *pool);
-void InitThreadPool(thread_pool *pool, size_t initQueueSize, size_t nThreads);
-void StopThreadPool(thread_pool *pool);
-bool ThreadPoolActiveWait(thread_pool *pool);
+void threadPoolRunThreadFunc(ThreadPool *pool);
+bool threadPoolActiveWait(ThreadPool *pool);
+void concurrentTaskQueueInit(ConcurrentTaskQueue *queue, size_t max_size);
+void concurrentTaskQueueReset(ConcurrentTaskQueue *queue);
+void concurrentTaskQueuePush(void *task_info, ConcurrentTaskQueueCallback *task_function, ConcurrentTaskQueue *queue);
+inline bool concurrentTaskQueueIsEmpty(ConcurrentTaskQueue *queue);
+volatile TaskInfoWrapper *concurrentTaskQueuePopTask(ConcurrentTaskQueue *queue);
+void concurrentTaskQueueInterrupt(ConcurrentTaskQueue *input);
+TaskInfoWrapper *concurrentTaskQueueTryPop(ConcurrentTaskQueue *queue);
+void threadPoolRunThreadFunc(ThreadPool *pool);
+void threadPoolInit(ThreadPool *pool, size_t initQueueSize, size_t nThreads);
+void threadPoolInterrupt(ThreadPool *pool);
+bool threadPoolActiveWait(ThreadPool *pool);
 

@@ -228,10 +228,11 @@ aad_float AadFloatShiftedSabr(aad_float strike, aad_float_shifted_sabr_params *p
 			z = params->alpha_ * moneyness / params->sigma0_;
 		}
 		else {
-			z = params->alpha_ / params->sigma0_ * (pow(shiftedForward, 1 - params->beta_)) / (1 - params->beta_);
+			aad_float betaInv = 1 - params->beta_;
+			z = params->alpha_ / params->sigma0_ * (pow(shiftedForward, betaInv) - pow(shiftedStrike, betaInv)) / betaInv;
 		}
 		aad_float inSqrtTerm = 1 - 2 * params->rho_ * z + z * z;
-		i0 = moneyness * params->alpha_ / log((sqrt(inSqrtTerm) + z - params->rho_) / (1 - params->rho_));
+		i0 = params->alpha_ * moneyness / log((sqrt(inSqrtTerm) + z - params->rho_) / (1 - params->rho_));
 
 	}
 

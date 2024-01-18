@@ -5,360 +5,668 @@
 #include <omp.h>
 #endif
 
-#include <math.h>
 #include <cassert>
 #include <cstdlib>
 
+#include <math.h>
 #include "threadpool.h"
 
 #define MAX_FLOAT 1e20
 #define MIN_FLOAT 1e-12
 
-struct matrix_f32
+struct Matrixf32
 {
 	size_t rows;
 	size_t cols;
-	float *contents;
+	float *contents = nullptr;
 	size_t ld;
-	float *operator[](int i) { return &contents[i * ld]; }
+	float *operator[](int i) { return contents + i * ld; }
 };
 
+struct Matrixf64
+{
+	size_t rows;
+	size_t cols;
+	double *contents = nullptr;
+	size_t ld;
+	double *operator[](int i) { return contents + i * ld; }
+};
 
-void FreeMatrixf32(matrix_f32 *a) {
+inline void matrixf32Free(Matrixf32 *a) {
 	free(a->contents);
 }
 
-inline float MatrixGetItem(matrix_f32 *a, size_t i, size_t j)
+inline void matrixf64Free(Matrixf64 *a) {
+	free(a->contents);
+}
+
+inline float matrixf32GetItem(Matrixf32 *a, size_t i, size_t j)
 {
 	return a->contents[i * a->ld + j];
 }
 
-inline void MatrixPutItem(matrix_f32 *a, size_t i, size_t j, float x) {
+inline double matrixf64GetItem(Matrixf64 *a, size_t i, size_t j)
+{
+	return a->contents[i * a->ld + j];
+}
+
+inline void matrixf32PutItem(Matrixf32 *a, size_t i, size_t j, float x) {
 	a->contents[i * a->ld + j] = x;
 }
 
-inline float *MatrixGetAddr(const matrix_f32 *a, size_t i, size_t j)
+inline void matrixf64PutItem(Matrixf64 *a, size_t i, size_t j, float x) {
+	a->contents[i * a->ld + j] = x;
+}
+
+inline float *matrixf32GetAddr(const Matrixf32 *a, size_t i, size_t j)
 {
 	return a->contents + (i * a->ld + j);
 }
 
-inline float FAbs(float x) {
+inline double *matrixf64GetAddr(const Matrixf64 *a, size_t i, size_t j)
+{
+	return a->contents + (i * a->ld + j);
+}
+
+inline float f32Abs(float x) {
 	if (x < 0) {
 		return -x;
-	} else {
+	}
+	else {
 		return x;
 	}
 }
 
-inline int IAbs(int x) {
+inline double f64Abs(double x) {
 	if (x < 0) {
 		return -x;
-	} else {
+	}
+	else {
 		return x;
 	}
 }
 
-matrix_f32 Matrixf32Copy(matrix_f32 *a) {
-	matrix_f32 result;
-	result.rows = a->rows;
-	result.cols = a->cols;
-	result.ld = a->ld;
-	result.contents = (float *)malloc(a->rows * a->cols * sizeof(float));
-	if (!result.contents) {
-		perror("Error allocating result.contents in Matrixf32Copy");
-		exit(1);
+inline int intAbs(int x) {
+	if (x < 0) {
+		return -x;
 	}
-	for (size_t i = 0; i < a->rows; i++) {
-		for (size_t j = 0; j < a->cols; j++) {
-			MatrixPutItem(&result, i, j, MatrixGetItem(a, i, j));
+	else {
+		return x;
+	}
+}
+
+// todo(AION) test this out (step through with debugger to make sure it does what we expect)
+int matrixf32Copy(Matrixf32 *result, Matrixf32 *input) {
+	if (!result->contents) {
+		result->contents = (float *)malloc(input->rows * input->cols * sizeof(float));
+		if (!result->contents) return 1;
+		result->rows = input->rows;
+		result->cols = input->cols;
+		result->ld = input->ld;
+	}
+	float *result_element = result->contents;
+	float *input_element = input->contents;
+	for (size_t i = 0; i < input->rows; ++i) {
+		for (size_t j = 0; j < input->cols; ++j) {
+			*result_element++ = *input_element++;
 		}
 	}
-	return result;
+	return 0;
+}
+
+int matrixf64Copy(Matrixf64 *result, Matrixf64 *input) {
+	if (!result->contents) {
+		result->contents = (double *)malloc(input->rows * input->cols * sizeof(double));
+		if (!result->contents) return 1;
+		result->rows = input->rows;
+		result->cols = input->cols;
+		result->ld = input->ld;
+	}
+	double *result_element = result->contents;
+	double *input_element = input->contents;
+	for (size_t i = 0; i < input->rows; ++i) {
+		for (size_t j = 0; j < input->cols; ++j) {
+			*result_element++ = *input_element++;
+		}
+	}
+	return 0;
 }
 
 
-
-void PrintMatrixf32(matrix_f32 *result)
+void matrixf32Print(Matrixf32 *result)
 {
-	for (size_t i = 0; i < result->rows; i++)
+	for (size_t i = 0; i < result->rows; ++i)
 	{
-		for (size_t j = 0; j < result->cols; j++)
+		for (size_t j = 0; j < result->cols; ++j)
 		{
-			printf("%f ", MatrixGetItem(result, i, j));
+			printf("%f ", matrixf32GetItem(result, i, j));
 		}
 		printf("\n");
 	}
 }
 
-double GetMaxError(matrix_f32 *a, matrix_f32 *b)
+void matrixf64Print(Matrixf64 *result)
 {
-	assert(a->rows == b->rows);
-	assert(a->cols == b->cols);
-	float maxError = 0;
-	for (size_t i = 0; i < a->rows; i++)
+	for (size_t i = 0; i < result->rows; ++i)
 	{
-		for (size_t j = 0; j < a->cols; j++)
+		for (size_t j = 0; j < result->cols; ++j)
 		{
-			float thisError = FAbs(MatrixGetItem(a, i, j) - MatrixGetItem(b, i, j));
-			if (!(thisError < MAX_FLOAT)) {
-				return MAX_FLOAT; // handle NaN
+			printf("%f ", matrixf64GetItem(result, i, j));
+		}
+		printf("\n");
+	}
+}
+
+float matrixf32Max(Matrixf32 *a)
+{
+	float max = 0;
+	float *a_element = a->contents;
+	for (size_t i = 0; i < a->rows; ++i)
+	{
+		for (size_t j = 0; j < a->cols; ++j)
+		{
+			float abs_value = f32Abs(*a_element++);
+			if (!(abs_value < MAX_FLOAT)) {
+				return (float)MAX_FLOAT; // handle NaN
 			}
-			maxError = (thisError > maxError) ? thisError : maxError;
+			max = (abs_value > max) ? abs_value : max;
 		}
 	}
-	return maxError;
+	return max;
+}
+
+double matrixf64Max(Matrixf64 *a)
+{
+	double max = 0;
+	double *a_element = a->contents;
+	for (size_t i = 0; i < a->rows; ++i)
+	{
+		for (size_t j = 0; j < a->cols; ++j)
+		{
+			double abs_value = f64Abs(*a_element++);
+			if (!(abs_value < MAX_FLOAT)) {
+				return MAX_FLOAT; // handle NaN
+			}
+			max = (abs_value > max) ? abs_value : max;
+		}
+	}
+	return max;
 }
 
 
-int Matrixf32MultiplyToTarget(matrix_f32 *result, const matrix_f32 *a, const matrix_f32 *b)
+int matrixf32MultiplyToTarget(Matrixf32 *result, const Matrixf32 *a, const Matrixf32 *b)
 {
-	assert(a->cols == b->rows);
-	// We check that result has already been allocated properly
-	assert(result->rows == a->rows);
-	assert(result->cols == b->cols);
-	assert(result->ld == b->cols);
-	assert(!!(result->contents));
+	// check multiplication is allowed
+	if (a->cols != b->rows) return 1;
+	// if result has not been allocated yet, we try and allocate ourselves
 	if (!result->contents) {
-		perror("Error allocating result.contents in Matrixf32Multiply");
-		exit(1);
+		result->contents = (float *)malloc(a->rows * b->cols * sizeof(float));
+		if (!result->contents) return 1;
+		result->rows = a->rows;
+		result->cols = b->cols;
+		result->ld = result->cols;
 	}
-	for (size_t i = 0; i < a->rows; i++)
+	float *a_row = a->contents;
+	float *result_row = result->contents;
+	for (size_t i = 0; i < a->rows; ++i)
 	{
-		const float *aRow = a->contents + i * a->ld;
-		float *resultRow = result->contents + i * result->ld;
-		for (size_t k = 0; k < b->rows; k++)
+		float *b_row = b->contents;
+		float *A_ik = a_row;
+		for (size_t k = 0; k < b->rows; ++k)
 		{
-			const float *bRow = b->contents + k * b->ld;
-			const float Aik = aRow[k];
 			// #pragma clang loop vectorize_width(8) // interleave_count(4)
 			for (size_t j = 0; j < result->cols; j++)
 			{
-				#ifdef __APPLE__
-				resultRow[j] += Aik * bRow[j];
+#ifdef __APPLE__
+				result_row[j] += *A_ik * b_row[j];
+				/*
+				This part is actually out of line with the microkernel loop (no difference in -Ofast, but visible in other compile modes)
+				The above lines up just fine in all
+
+				BUUUUUUUT.... not on windows. So we actually need to swap depending on the compiler. Lol.
+				Maybe it was the conversion float->double->float? If Apple math header has a float version of fma as opposed to fmaf
+				*/
+#else
+				result_row[j] = fmaf(b_row[j], *A_ik, result_row[j]);
+#endif
+			}
+			b_row += b->ld;
+			++A_ik;
+		}
+		a_row += a->ld;
+		result_row += result->ld;
+	}
+	return 0;
+}
+
+int matrixf64MultiplyToTarget(Matrixf64 *result, const Matrixf64 *a, const Matrixf64 *b)
+{
+	// Check multiplication is allowed
+	if (a->cols != b->rows) return 1;
+	// if the result has not been allocated, we try and allocate here
+	if (!result->contents) {
+		result->contents = (double *)malloc(a->rows * b->cols * sizeof(double));
+		if (!result->contents) return 1;
+		result->rows = a->rows;
+		result->cols = b->cols;
+		result->ld = result->cols;
+	}
+	double *a_row = a->contents;
+	double *result_row = result->contents;
+	for (size_t i = 0; i < a->rows; ++i)
+	{
+		double *b_row = b->contents;
+		double *A_ik = a_row;
+		for (size_t k = 0; k < b->rows; k++)
+		{
+			// #pragma clang loop vectorize_width(8) // interleave_count(4)
+			for (size_t j = 0; j < result->cols; ++j)
+			{
+#ifdef __APPLE__
+				result_row[j] += *A_ik * b_row[j];
 				/*
 				This part is actually out of line with the microkernel loop (no difference in -Ofast, but visible in other compile modes)
 				The above lines up just fine in all
 
 				BUUUUUUUT.... not on windows. So we actually need to swap depending on the compiler. Lol.
 				*/
-				#else
-				resultRow[j] = fma(bRow[j], Aik, resultRow[j]);
-				#endif
+#else
+				result_row[j] = fma(b_row[j], *A_ik, result_row[j]);
+#endif
 			}
+			b_row += b->ld;
+			++A_ik;
 		}
+		a_row += a->ld;
+		result_row += result->ld;
 	}
 	return 0;
 }
 
-matrix_f32 Matrixf32Multiply(const matrix_f32 *a, const matrix_f32 *b)
+Matrixf32 matrixf32Multiply(const Matrixf32 *a, const Matrixf32 *b)
 {
 	assert(a->cols == b->rows);
-	matrix_f32 result;
+	Matrixf32 result;
 	result.rows = a->rows;
 	result.cols = b->cols;
 	result.ld = b->cols;
 	result.contents = (float *)calloc(result.rows * result.cols, sizeof(float));
-	Matrixf32MultiplyToTarget(&result, a, b);
+	matrixf32MultiplyToTarget(&result, a, b);
+	return result;
+}
+
+Matrixf64 matrixf64Multiply(const Matrixf64 *a, const Matrixf64 *b)
+{
+	assert(a->cols == b->rows);
+	Matrixf64 result;
+	result.rows = a->rows;
+	result.cols = b->cols;
+	result.ld = b->cols;
+	result.contents = (double *)calloc(result.rows * result.cols, sizeof(double));
+	matrixf64MultiplyToTarget(&result, a, b);
 	return result;
 }
 
 /*
 Multiply inplace by a scalar
 */
-void Matrixf32MultiplyInplace(matrix_f32 *a, float x) {
+void matrixf32MultiplyInplace(Matrixf32 *a, float x) {
+	float *a_element = a->contents;
+	for (size_t i = 0; i < a->rows; ++i) {
+		for (size_t j = 0; j < a->cols; ++j) {
+			*a_element++ *= x;
+		}
+	}
+}
+
+void matrixf64MultiplyInplace(Matrixf64 *a, double x) {
+	double *a_element = a->contents;
 	for (size_t i = 0; i < a->rows; i++) {
 		for (size_t j = 0; j < a->cols; j++) {
-			MatrixPutItem(a, i, j, x * MatrixGetItem(a, i, j));
+			*a_element++ *= x;
 		}
 	}
 }
 
-matrix_f32 Matrixf32Sum(matrix_f32 *a, matrix_f32 *b) {
-	assert(a->rows == b->rows);
-	assert(a->cols == b->cols);
-	matrix_f32 result;
-	result.rows = a->rows;
-	result.cols = b->cols;
-	result.ld = result.cols;
-	size_t contentSize = result.rows * result.cols * sizeof(float);
-	void *newContent = malloc(contentSize);
-	if (!newContent) {
-		perror("Error allocating results in Matrixf32Sum");
-		exit(1);
+int matrixf32Sum(Matrixf32 *result, Matrixf32 *a, Matrixf32 *b) {
+	if (a->rows != b->rows || a->cols != b->cols) return 1;
+	if (!result->contents) {
+		result->contents = (float *)malloc(a->rows * a->cols * sizeof(float));
+		if (!result->contents) return 1;
+		result->rows = a->rows;
+		result->cols = a->cols;
+		result->ld = result->cols;
 	}
-	result.contents = (float *)newContent;
-	for (size_t i = 0; i < result.rows; i++) {
-		for (size_t j = 0; j < result.cols; j++) {
-			MatrixPutItem(&result, i, j, MatrixGetItem(a, i, j) + MatrixGetItem(b, i, j));
+	float *result_element = result->contents;
+	float *a_element = a->contents;
+	float *b_element = b->contents;
+	for (size_t i = 0; i < result->rows; i++) {
+		for (size_t j = 0; j < result->cols; j++) {
+			*result_element++ = *a_element++ + *b_element++;
 		}
 	}
-	return result;
+	return 0;
 }
 
-
-matrix_f32 RandomMatrixf32(size_t rows, size_t cols)
-{
-	matrix_f32 result;
-	result.rows = rows;
-	result.cols = cols;
-	result.ld = cols;
-	void *newContents = malloc(rows * cols * sizeof(float));
-	if (!newContents) {
-		perror("Error allocating result.contents in RandomMatrixf32");
-		exit(1);
+int matrixf64Sum(Matrixf64 *result, Matrixf64 *a, Matrixf64 *b) {
+	if (a->rows != b->rows || a->cols != b->cols) return 1;
+	if (!result->contents) {
+		result->contents = (double *)malloc(a->rows * a->cols * sizeof(double));
+		if (!result->contents) return 1;
+		result->rows = a->rows;
+		result->cols = a->cols;
+		result->ld = result->cols;
 	}
-	result.contents = (float *)newContents;
-	for (size_t i = 0; i < rows; i++)
+	double *result_element = result->contents;
+	double *a_element = a->contents;
+	double *b_element = b->contents;
+	for (size_t i = 0; i < result->rows; i++) {
+		for (size_t j = 0; j < result->cols; j++) {
+			*result_element++ = *a_element++ + *b_element++;
+		}
+	}
+	return 0;
+}
+
+int matrixf32RandomInit(Matrixf32 *result, size_t rows, size_t cols) {
+	// let's make sure this memory does not exist before we re-allocate it
+	if (result->contents) free(result->contents);
+	result->contents = (float *)malloc(rows * cols * sizeof(float));
+	if (!result->contents) return 1;
+	result->rows = rows;
+	result->cols = cols;
+	result->ld = cols;
+	float *result_element = result->contents;
+	for (size_t i = 0; i < rows; ++i)
 	{
-		for (size_t j = 0; j < cols; j++)
+		for (size_t j = 0; j < cols; ++j)
 		{
-			int randInt = rand();
-			float randomFloat = ((float)randInt) / RAND_MAX;
-			MatrixPutItem(&result, i, j, randomFloat);
+			int random_int = rand();
+			float random_float = ((float)random_int) / RAND_MAX;
+			*result_element++ = random_float;
 		}
 	}
-	return result;
+	return 0;
 }
 
-matrix_f32 Onesf32(size_t rows, size_t cols)
+
+Matrixf32 matrixf32Random(size_t rows, size_t cols)
 {
-	matrix_f32 result;
-	result.rows = rows;
-	result.cols = cols;
-	result.ld = cols;
-	result.contents = (float *)malloc(rows * cols * sizeof(float));
-	if (!result.contents) {
-		perror("Error allocating result.contents in Onesf32");
+	Matrixf32 result;
+	int err = matrixf32RandomInit(&result, rows, cols);
+	if (err) {
+		perror("Error allocating matrixf32");
 		exit(1);
 	}
+	return result;
+}
 
-	for (size_t i = 0; i < rows; i++)
+int matrixf64RandomInit(Matrixf64 *result, size_t rows, size_t cols) {
+	// Let's make sure this does not exist
+	if (result->contents) free(result->contents);
+	result->contents = (double *)malloc(rows * cols * sizeof(double));
+	if (!result->contents) return 1;
+	result->rows = rows;
+	result->cols = cols;
+	result->ld = cols;
+	double *result_element = result->contents;
+	for (size_t i = 0; i < rows; ++i)
 	{
-		for (size_t j = 0; j < cols; j++)
+		for (size_t j = 0; j < cols; ++j)
 		{
-			MatrixPutItem(&result, i, j, 1);
+			int random_int = rand();
+			double random_float = ((double)random_int) / RAND_MAX;
+			*result_element++ = random_float;
 		}
+	}
+	return 0;
+}
+
+Matrixf64 matrixf64Random(size_t rows, size_t cols)
+{
+	Matrixf64 result;
+	int err = matrixf64RandomInit(&result, rows, cols);
+	if (err) {
+		perror("Error allocating matrixf64");
+		exit(1);
 	}
 	return result;
 }
 
-matrix_f32 Identityf32(size_t n)
+int matrixf32InitOnes(Matrixf32 *result, size_t rows, size_t cols) {
+	if (result->contents) free(result->contents);
+	result->contents = (float *)malloc(rows * cols * sizeof(float));
+	if (!result->contents) return 1;
+	result->rows = rows;
+	result->cols = cols;
+	result->ld = cols;
+	float *result_element = result->contents;
+	for (size_t i = 0; i < rows; ++i) {
+		for (size_t j = 0; j < cols; ++j) {
+			*result_element++ = 1;
+		}
+	}
+	return 0;
+}
+
+Matrixf32 matrixf32Ones(size_t rows, size_t cols)
 {
-	matrix_f32 result;
+	Matrixf32 result;
+	int err = matrixf32InitOnes(&result, rows, cols);
+	if (err) {
+		perror("Error allocating matrixf32");
+		exit(1);
+	}
+	return result;
+}
+
+int matrixf64InitOnes(Matrixf64 *result, size_t rows, size_t cols) {
+	if (result->contents) free(result->contents);
+	result->contents = (double *)malloc(rows * cols * sizeof(double));
+	if (!result->contents) return 1;
+	result->rows = rows;
+	result->cols = cols;
+	result->ld = cols;
+	double *result_element = result->contents;
+	for (size_t i = 0; i < rows; i++) {
+		for (size_t j = 0; j < cols; j++) {
+			*result_element++ = 1;
+		}
+	}
+	return 0;
+}
+
+Matrixf64 matrixf64Ones(size_t rows, size_t cols)
+{
+	Matrixf64 result;
+	int err = matrixf64InitOnes(&result, rows, cols);
+	if (err) {
+		perror("Error allocating matrixf32");
+		exit(1);
+	}
+	return result;
+}
+
+int matrixf32InitIdentity(Matrixf32 *result, size_t n) {
+	if (result->contents) free(result->contents);
+	result->contents = (float *)calloc(n * n, sizeof(float));
+	if (!result->contents) return 1;
+	result->rows = n;
+	result->cols = n;
+	result->ld = n;
+	float *result_element = result->contents;
+	for (size_t i = 0; i < n; ++i) {
+		*result_element = 1;
+		result_element += n + 1;
+	}
+	return 0;
+}
+
+Matrixf32 Matrixf32CreateIdentity(size_t n)
+{
+	Matrixf32 result;
 	result.rows = n;
 	result.cols = n;
 	result.ld = n;
 	result.contents = (float *)calloc(n * n, sizeof(float));
+	float *result_element = result.contents;
 	for (size_t i = 0; i < n; i++)
 	{
-		MatrixPutItem(&result, i, i, 1);
+		*result_element = 1;
+		result_element += n + 1;
 	}
 	return result;
+}
+
+int matrixf32InitUpperRandom(Matrixf32 *result, size_t n) {
+	if (result->contents) free(result->contents);
+	result->contents = (float *)calloc(n * n, sizeof(float));
+	if (!result->contents) return 1;
+	result->rows = n;
+	result->cols = n;
+	result->ld = n;
+	float *result_element = result->contents;
+	for (size_t i = 0; i < n; ++i) {
+		result_element += i;
+		for (size_t j = i; j < n; ++j) {
+			int random_int = rand();
+			float random_float = ((float)random_int) / RAND_MAX;
+			*result_element++ = random_float;
+		}
+	}
+	return 0;
 }
 
 /*
 Returns an upper triangular matrix with random non-zero elements
 */
-matrix_f32 UpperRandomf32(size_t n) {
-	matrix_f32 result;
+Matrixf32 matrixf32CreateUpperRandom(size_t n) {
+	Matrixf32 result;
 	result.rows = n;
 	result.cols = n;
 	result.ld = n;
-	result.contents = (float *)calloc(n * n, sizeof(float));
-	for (size_t i = 0; i < n; i++) {
-		for (size_t j = i; j < n; j++) {
-			int randInt = rand();
-			float randomFloat = ((float)randInt) / RAND_MAX;
-			MatrixPutItem(&result, i, j, randomFloat * 100);
-		}
+	int err = matrixf32InitUpperRandom(&result, n);
+	if (err) {
+		perror("Failure in allocating Matrixf32");
+		exit(EXIT_FAILURE);
 	}
 	return result;
 }
 
+int matrixf32InitLowerRandom(Matrixf32 *result, size_t n) {
+	if (result->contents) free(result->contents);
+	result->contents = (float *)calloc(n * n, sizeof(float));
+	if (!result->contents) return 1;
+	result->rows = n;
+	result->cols = n;
+	result->ld = n;
+	float *result_element = result->contents;
+	for (size_t i = 0; i < n; ++i) {
+		result_element += i;
+		for (size_t j = i + 1; j > 0; --j) {
+			int random_int = rand();
+			float random_float = ((float)random_int) / RAND_MAX;
+			*result_element++ = random_float;
+		}
+	}
+	return 0;
+}
+
+int matrixf64InitLowerRandom(Matrixf64 *result, size_t n) {
+	if (result->contents) free(result->contents);
+	result->contents = (double *)calloc(n * n, sizeof(double));
+	if (!result->contents) return 1;
+	result->rows = n;
+	result->cols = n;
+	result->ld = n;
+	double *result_element = result->contents;
+	for (size_t i = 0; i < n; ++i) {
+		result_element += i;
+		for (size_t j = i + 1; j > 0; --j) {
+			int random_int = rand();
+			double random_float = ((double)random_int) / RAND_MAX;
+			*result_element++ = random_float;
+		}
+	}
+	return 0;
+}
 /*
 Returns an lower triangular matrix with random non-zero elements
 */
-matrix_f32 LowerRandomf32(size_t n) {
-	matrix_f32 result;
-	result.rows = n;
-	result.cols = n;
-	result.ld = n;
-	result.contents = (float *)calloc(n * n, sizeof(float));
-	for (size_t i = 0; i < n; i++) {
-		for (size_t j = i + 1; j > 0; j--) { // stupid trick because j is an unsigned int
-			int randomValue = rand();
-			float newValue = static_cast<float>(randomValue) / RAND_MAX * 100;
-			MatrixPutItem(&result, i, j - 1, newValue);
-		}
+Matrixf32 LowerRandomf32(size_t n) {
+	Matrixf32 result;
+	int err = matrixf32InitLowerRandom(&result, n);
+	if (err) {
+		perror("Allocating Matrixf32 failed");
+		exit(1);
 	}
 	return result;
 }
 
 /*
-Internal block for matrix multiplication - compute the result in blocks of isze kernelHeight x (4 * kernelWidth)
+Internal block for matrix multiplication - compute the result in blocks of isze kernel_height x (4 * kernel_width)
 */
 #ifdef __APPLE__
 // ARM implimentation
 #define SIMD_VECTOR_SIZE 4
-void Microkernel(matrix_f32 *resultMatrix, const matrix_f32 *a, const matrix_f32 *b, size_t resultRow, size_t resultCol, size_t kernelWidth, size_t kernelHeight)
+int microkernel(Matrixf32 *result_matrix, const Matrixf32 *a, const Matrixf32 *b, size_t result_row, size_t result_col, size_t kernel_width, size_t kernel_height)
 {
-	assert(a->cols == b->rows);
-	assert(kernelWidth * kernelHeight < 128);
-	// resultElems is really an array of size kernelWidth * kernelHeight
-	float32x4_t resultElems[128];
-	for (size_t i = 0; i < kernelHeight; i++)
+	if (a->cols != b->rows) return 1;
+	if (kernel_width * kernel_height < 128) return 1;
+	float32x4_t result_elements[128];
+	for (size_t i = 0; i < kernel_height; i++)
 	{
-		for (size_t j = 0; j < kernelWidth; j++)
+		for (size_t j = 0; j < kernel_width; j++)
 		{
-			resultElems[i * kernelWidth + j] = vdupq_n_f32(0);
+			result_elements[i * kernel_width + j] = vdupq_n_f32(0);
 		}
 	}
 	for (size_t k = 0; k < a->cols / SIMD_VECTOR_SIZE; k++)
 	{
-		for (size_t i = 0; i < kernelHeight; i++)
+		for (size_t i = 0; i < kernel_height; i++)
 		{
-			float32x4_t aElems_i = vld1q_f32(MatrixGetAddr(a, resultRow + i, SIMD_VECTOR_SIZE * k));
-			for (size_t j = 0; j < kernelWidth; j++)
+			float32x4_t a_elems_i = vld1q_f32(matrixf32GetAddr(a, result_row + i, SIMD_VECTOR_SIZE * k));
+			for (size_t j = 0; j < kernel_width; j++)
 			{
-				float32x4_t bElems_i0 = vld1q_f32(MatrixGetAddr(b, SIMD_VECTOR_SIZE * k, resultCol + SIMD_VECTOR_SIZE * j));
-				resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bElems_i0, aElems_i, 0);
+				float32x4_t b_element_i0 = vld1q_f32(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k, result_col + SIMD_VECTOR_SIZE * j));
+				result_elements[i * kernel_width + j] = vmlaq_laneq_f32(result_elements[i * kernel_width + j], b_element_i0, a_element_i, 0);
 
-				float32x4_t bElems_i1 = vld1q_f32(MatrixGetAddr(b, SIMD_VECTOR_SIZE * k + 1, resultCol + SIMD_VECTOR_SIZE * j));
-				resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bElems_i1, aElems_i, 1);
+				float32x4_t b_element_i1 = vld1q_f32(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 1, result_col + SIMD_VECTOR_SIZE * j));
+				result_elements[i * kernel_width + j] = vmlaq_laneq_f32(result_elements[i * kernel_width + j], b_element_i1, a_element_i, 1);
 
-				float32x4_t bElems_i2 = vld1q_f32(MatrixGetAddr(b, SIMD_VECTOR_SIZE * k + 2, resultCol + SIMD_VECTOR_SIZE * j));
-				resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bElems_i2, aElems_i, 2);
+				float32x4_t b_element_i2 = vld1q_f32(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 2, result_col + SIMD_VECTOR_SIZE * j));
+				result_elements[i * kernel_width + j] = vmlaq_laneq_f32(result_elements[i * kernel_width + j], b_element_i2, a_element_i, 2);
 
-				float32x4_t bElems_i3 = vld1q_f32(MatrixGetAddr(b, SIMD_VECTOR_SIZE * k + 3, resultCol + SIMD_VECTOR_SIZE * j));
-				resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bElems_i3, aElems_i, 3);
+				float32x4_t b_element_i3 = vld1q_f32(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 3, result_col + SIMD_VECTOR_SIZE * j));
+				result_elements[i * kernel_width + j] = vmlaq_laneq_f32(result_elements[i * kernel_width + j], b_element_i3, a_element_i, 3);
 			}
 		}
 	}
 	// If k is not divisible by SIMD_VECTOR_SIZE, handle the remainder here
 	size_t remainder = a->cols % SIMD_VECTOR_SIZE;
 	if (remainder) {
-		for (size_t i = 0; i < kernelHeight; i++) {
-			float32x4_t aRemainder_i = vld1q_f32(MatrixGetAddr(a, resultRow + i, a->cols - remainder));
-			for (size_t j = 0; j < kernelWidth; j++) {
-				float32x4_t bRemainderElems_0j = vld1q_f32(MatrixGetAddr(b, a->cols - remainder, resultCol + SIMD_VECTOR_SIZE * j));
-				resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bRemainderElems_0j, aRemainder_i, 0);
+		for (size_t i = 0; i < kernel_height; i++) {
+			float32x4_t a_remainder_element_i = vld1q_f32(matrixf32GetAddr(a, result_row + i, a->cols - remainder));
+			for (size_t j = 0; j < kernel_width; j++) {
+				float32x4_t b_remainder_element_0j = vld1q_f32(matrixf32GetAddr(b, a->cols - remainder, result_col + SIMD_VECTOR_SIZE * j));
+				result_elements[i * kernel_width + j] = vmlaq_laneq_f32(result_elements[i * kernel_width + j], b_remainder_element_0j, a_remainder_element_i, 0);
 				if (remainder > 1) {
-					float32x4_t bRemainderElems_1j = vld1q_f32(MatrixGetAddr(b, a->cols - remainder + 1, resultCol + SIMD_VECTOR_SIZE * j));
-					resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bRemainderElems_1j, aRemainder_i, 1);
+					float32x4_t b_remainder_element_1j = vld1q_f32(matrixf32GetAddr(b, a->cols - remainder + 1, result_col + SIMD_VECTOR_SIZE * j));
+					result_elements[i * kernel_width + j] = vmlaq_laneq_f32(result_elements[i * kernel_width + j], b_remainder_element_1j, a_remainder_element_i, 1);
 				}
 				if (remainder > 2) {
-					float32x4_t bRemainderElems_2j = vld1q_f32(MatrixGetAddr(b, a->cols - remainder + 2, resultCol + SIMD_VECTOR_SIZE * j));
-					resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bRemainderElems_2j, aRemainder_i, 2);
+					float32x4_t b_remainder_element_2j = vld1q_f32(matrixf32GetAddr(b, a->cols - remainder + 2, result_col + SIMD_VECTOR_SIZE * j));
+					result_elements[i * kernel_width + j] = vmlaq_laneq_f32(result_elements[i * kernel_width + j], b_remainder_element_2j, a_remainder_element_i, 2);
 				}
 			}
 		}
 	}
-	float *resultLocation = MatrixGetAddr(resultMatrix, resultRow, resultCol);
-	for (size_t i = 0; i < kernelHeight; i++)
+	float *result_location = matrixf32GetAddr(result_matrix, result_row, result_col);
+	for (size_t i = 0; i < kernel_height; i++)
 	{
-		for (size_t j = 0; j < kernelWidth; j++)
+		for (size_t j = 0; j < kernel_width; j++)
 		{
-			vst1q_f32(resultLocation + i * b->cols + j * SIMD_VECTOR_SIZE, resultElems[i * kernelWidth + j]);
+			vst1q_f32(result_location + i * b->cols + j * SIMD_VECTOR_SIZE, result_elements[i * kernel_width + j]);
 		}
 	}
 }
@@ -366,157 +674,157 @@ void Microkernel(matrix_f32 *resultMatrix, const matrix_f32 *a, const matrix_f32
 /*
 If k is not divisible by SIMD_VECTOR_SIZE, handle the addition of the remaining elements
 
-void MicrokernelRemainder(const matrix_f32 *a, const matrix_f32 *b, float *resultLocation, size_t resultRow, size_t resultCol, size_t kernelWidth, size_t kernelHeight)
+void MicrokernelRemainder(const Matrixf32 *a, const Matrixf32 *b, float *result_location, size_t result_row, size_t result_column, size_t kernel_width, size_t kernel_height)
 {
 	size_t remainder = a->cols % SIMD_VECTOR_SIZE;
-	float32x4_t resultElems[32];
-	for (size_t i = 0; i < kernelHeight; i++)
+	float32x4_t result_elements[32];
+	for (size_t i = 0; i < kernel_height; i++)
 	{
-		for (size_t j = 0; j < kernelWidth; j++)
+		for (size_t j = 0; j < kernel_width; j++)
 		{
-			resultElems[i * kernelWidth + j] = vdupq_n_f32(0);
+			result_elements[i * kernel_width + j] = vdupq_n_f32(0);
 		}
 	}
-	for (size_t i = 0; i < kernelHeight; i++)
+	for (size_t i = 0; i < kernel_height; i++)
 	{
-		float32x4_t aRemainder_i = vld1q_f32(MatrixGetAddr(a, resultRow + i, a->cols - remainder));
-		for (size_t j = 0; j < kernelWidth; j++)
+		float32x4_t a_remainder_element_i = vld1q_f32(matrixf32GetAddr(a, result_row + i, a->cols - remainder));
+		for (size_t j = 0; j < kernel_width; j++)
 		{
-			float32x4_t bRemainderElems_0j = vld1q_f32(MatrixGetAddr(b, a->cols - remainder, resultCol + SIMD_VECTOR_SIZE * j));
-			resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bRemainderElems_0j, aRemainder_i, 0);
+			float32x4_t b_remainder_element_0j = vld1q_f32(matrixf32GetAddr(b, a->cols - remainder, result_column + SIMD_VECTOR_SIZE * j));
+			result_elements[i * kernel_width + j] = vmlaq_laneq_f32(result_elements[i * kernel_width + j], b_remainder_element_0j, a_remainder_element_i, 0);
 			if (remainder > 1)
 			{
-				float32x4_t bRemainderElems_1j = vld1q_f32(MatrixGetAddr(b, a->cols - remainder + 1, resultCol + SIMD_VECTOR_SIZE * j));
-				resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bRemainderElems_1j, aRemainder_i, 1);
+				float32x4_t b_remainder_element_1j = vld1q_f32(matrixf32GetAddr(b, a->cols - remainder + 1, result_column + SIMD_VECTOR_SIZE * j));
+				result_elements[i * kernel_width + j] = vmlaq_laneq_f32(result_elements[i * kernel_width + j], b_remainder_element_1j, a_remainder_element_i, 1);
 			}
 			if (remainder > 2)
 			{
-				float32x4_t bRemainderElems_2j = vld1q_f32(MatrixGetAddr(b, a->cols - remainder + 2, resultCol + SIMD_VECTOR_SIZE * j));
-				resultElems[i * kernelWidth + j] = vmlaq_laneq_f32(resultElems[i * kernelWidth + j], bRemainderElems_2j, aRemainder_i, 2);
+				float32x4_t b_remainder_element_2j = vld1q_f32(matrixf32GetAddr(b, a->cols - remainder + 2, result_column + SIMD_VECTOR_SIZE * j));
+				result_elements[i * kernel_width + j] = vmlaq_laneq_f32(result_elements[i * kernel_width + j], b_remainder_element_2j, a_remainder_element_i, 2);
 			}
 		}
 	}
-	for (size_t i = 0; i < kernelHeight; i++)
+	for (size_t i = 0; i < kernel_height; i++)
 	{
-		for (size_t j = 0; j < kernelWidth; j++)
+		for (size_t j = 0; j < kernel_width; j++)
 		{
-			vst1q_f32(resultLocation + i * b->cols + j * SIMD_VECTOR_SIZE, resultElems[i * kernelWidth + j]);
+			vst1q_f32(result_location + i * b->cols + j * SIMD_VECTOR_SIZE, result_elements[i * kernel_width + j]);
 		}
 	}
 } */
 #else
 // AMD64 implementation
 #define SIMD_VECTOR_SIZE 8 
-void Microkernel(matrix_f32 *resultMatrix, const matrix_f32 *a, const matrix_f32 *b, size_t resultRow, size_t resultCol, const size_t kernelWidth, const size_t kernelHeight)
+void matrixf32MicrokernelApply(Matrixf32 *result_matrix, const Matrixf32 *a, const Matrixf32 *b, size_t result_row, size_t result_column, const size_t kernel_width, const size_t kernel_height)
 {
 	assert(a->cols == b->rows);
-	assert(kernelHeight * kernelWidth < 32);
-	__m256 resultElems[32];
-	for (size_t i = 0; i < kernelHeight; i++)
+	assert(kernel_height * kernel_width < 32);
+	__m256 result_elements[32];
+	for (size_t i = 0; i < kernel_height; i++)
 	{
-		for (size_t j = 0; j < kernelWidth; j++)
+		for (size_t j = 0; j < kernel_width; j++)
 		{
-			resultElems[i * kernelWidth + j] = _mm256_set1_ps(0);
+			result_elements[i * kernel_width + j] = _mm256_set1_ps(0);
 		}
 	}
 	for (size_t k = 0; k < a->cols / SIMD_VECTOR_SIZE; k++)
 	{
-		for (size_t i = 0; i < kernelHeight; i++)
+		for (size_t i = 0; i < kernel_height; i++)
 		{
-			float *aElems_i = MatrixGetAddr(a, resultRow + i, SIMD_VECTOR_SIZE * k);
-			for (size_t j = 0; j < kernelWidth; j++)
+			float *aElems_i = matrixf32GetAddr(a, result_row + i, SIMD_VECTOR_SIZE * k);
+			for (size_t j = 0; j < kernel_width; j++)
 			{
 				//todo(AION): we have 3 fma ports, why can't we use 3 accumulators? It seemed needlessly slow when I tried 2
-				__m256 bElems_0j = _mm256_load_ps(MatrixGetAddr(b, SIMD_VECTOR_SIZE * k, resultCol + SIMD_VECTOR_SIZE * j));
-				__m256 broadcastA_i0 = _mm256_set1_ps(*aElems_i);
-				resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(broadcastA_i0, bElems_0j, resultElems[i * kernelWidth + j]);
+				__m256 b_elements_0j = _mm256_load_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 a_element_broadcast_i0 = _mm256_set1_ps(*aElems_i);
+				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(a_element_broadcast_i0, b_elements_0j, result_elements[i * kernel_width + j]);
 
-				__m256 bElems_1j = _mm256_load_ps(MatrixGetAddr(b, SIMD_VECTOR_SIZE * k + 1, resultCol + SIMD_VECTOR_SIZE * j));
-				__m256 broadcastA_i1 = _mm256_set1_ps(*(aElems_i + 1));
-				resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(broadcastA_i1, bElems_1j, resultElems[i * kernelWidth + j]);
+				__m256 b_elements_1j = _mm256_load_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 1, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 a_element_broadcast_i1 = _mm256_set1_ps(*(aElems_i + 1));
+				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(a_element_broadcast_i1, b_elements_1j, result_elements[i * kernel_width + j]);
 
-				__m256 bElems_2j = _mm256_load_ps(MatrixGetAddr(b, SIMD_VECTOR_SIZE * k + 2, resultCol + SIMD_VECTOR_SIZE * j));
-				__m256 broadcastA_i2 = _mm256_set1_ps(*(aElems_i + 2));
-				resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(broadcastA_i2, bElems_2j, resultElems[i * kernelWidth + j]);
+				__m256 b_elements_2j = _mm256_load_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 2, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 a_element_broadcast_i2 = _mm256_set1_ps(*(aElems_i + 2));
+				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(a_element_broadcast_i2, b_elements_2j, result_elements[i * kernel_width + j]);
 
-				__m256 bElems_3j = _mm256_load_ps(MatrixGetAddr(b, SIMD_VECTOR_SIZE * k + 3, resultCol + SIMD_VECTOR_SIZE * j));
-				__m256 broadcastA_i3 = _mm256_set1_ps(*(aElems_i + 3));
-				resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(broadcastA_i3, bElems_3j, resultElems[i * kernelWidth + j]);
+				__m256 b_elements_3j = _mm256_load_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 3, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 a_element_broadcast_i3 = _mm256_set1_ps(*(aElems_i + 3));
+				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(a_element_broadcast_i3, b_elements_3j, result_elements[i * kernel_width + j]);
 
-				__m256 bElems_4j = _mm256_load_ps(MatrixGetAddr(b, SIMD_VECTOR_SIZE * k + 4, resultCol + SIMD_VECTOR_SIZE * j));
-				__m256 broadcastA_i4 = _mm256_set1_ps(*(aElems_i + 4));
-				resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(broadcastA_i4, bElems_4j, resultElems[i * kernelWidth + j]);
+				__m256 b_elements_4j = _mm256_load_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 4, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 a_element_broadcast_i4 = _mm256_set1_ps(*(aElems_i + 4));
+				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(a_element_broadcast_i4, b_elements_4j, result_elements[i * kernel_width + j]);
 
-				__m256 bElems_5j = _mm256_load_ps(MatrixGetAddr(b, SIMD_VECTOR_SIZE * k + 5, resultCol + SIMD_VECTOR_SIZE * j));
-				__m256 broadcastA_i5 = _mm256_set1_ps(*(aElems_i + 5));
-				resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(broadcastA_i5, bElems_5j, resultElems[i * kernelWidth + j]);
+				__m256 b_elements_5j = _mm256_load_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 5, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 a_element_broadcast_i5 = _mm256_set1_ps(*(aElems_i + 5));
+				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(a_element_broadcast_i5, b_elements_5j, result_elements[i * kernel_width + j]);
 
-				__m256 bElems_6j = _mm256_load_ps(MatrixGetAddr(b, SIMD_VECTOR_SIZE * k + 6, resultCol + SIMD_VECTOR_SIZE * j));
-				__m256 broadcastA_i6 = _mm256_set1_ps(*(aElems_i + 6));
-				resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(broadcastA_i6, bElems_6j, resultElems[i * kernelWidth + j]);
+				__m256 b_elements_6j = _mm256_load_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 6, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 a_element_broadcast_i6 = _mm256_set1_ps(*(aElems_i + 6));
+				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(a_element_broadcast_i6, b_elements_6j, result_elements[i * kernel_width + j]);
 
-				__m256 bElems_7j = _mm256_load_ps(MatrixGetAddr(b, SIMD_VECTOR_SIZE * k + 7, resultCol + SIMD_VECTOR_SIZE * j));
-				__m256 broadcastA_i7 = _mm256_set1_ps(*(aElems_i + 7));
-				resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(broadcastA_i7, bElems_7j, resultElems[i * kernelWidth + j]);
+				__m256 b_elements_7j = _mm256_load_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 7, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 a_element_broadcast_i7 = _mm256_set1_ps(*(aElems_i + 7));
+				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(a_element_broadcast_i7, b_elements_7j, result_elements[i * kernel_width + j]);
 			}
 		}
 	}
 	// If k is not divisible by SIMD_VECTOR_SIZE, handle the remainder
 	size_t remainder = a->cols % SIMD_VECTOR_SIZE;
 	if (remainder) {
-		for (size_t i = 0; i < kernelHeight; i++)
+		for (size_t i = 0; i < kernel_height; i++)
 		{
-			float *aRemainder_i = MatrixGetAddr(a, resultRow + i, a->cols - remainder);
-			for (size_t j = 0; j < kernelWidth; j++)
+			float *a_remainder_element_i = matrixf32GetAddr(a, result_row + i, a->cols - remainder);
+			for (size_t j = 0; j < kernel_width; j++)
 			{
-				__m256 bRemainderElems_0j = _mm256_load_ps(MatrixGetAddr(b, a->cols - remainder, resultCol + SIMD_VECTOR_SIZE * j));
-				__m256 aRemainderElems_i0 = _mm256_set1_ps(*aRemainder_i);
-				resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(aRemainderElems_i0, bRemainderElems_0j, resultElems[i * kernelWidth + j]);
+				__m256 b_remainder_element_0j = _mm256_load_ps(matrixf32GetAddr(b, a->cols - remainder, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 aRemainderElems_i0 = _mm256_set1_ps(*a_remainder_element_i);
+				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i0, b_remainder_element_0j, result_elements[i * kernel_width + j]);
 				if (remainder > 1)
 				{
-					__m256 bRemainderElems_1j = _mm256_load_ps(MatrixGetAddr(b, a->cols - remainder + 1, resultCol + SIMD_VECTOR_SIZE * j));
-					__m256 aRemainderElems_i1 = _mm256_set1_ps(*(aRemainder_i + 1));
-					resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(aRemainderElems_i1, bRemainderElems_1j, resultElems[i * kernelWidth + j]);
+					__m256 b_remainder_element_1j = _mm256_load_ps(matrixf32GetAddr(b, a->cols - remainder + 1, result_column + SIMD_VECTOR_SIZE * j));
+					__m256 aRemainderElems_i1 = _mm256_set1_ps(*(a_remainder_element_i + 1));
+					result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i1, b_remainder_element_1j, result_elements[i * kernel_width + j]);
 				}
 				if (remainder > 2)
 				{
-					__m256 bRemainderElems_2j = _mm256_load_ps(MatrixGetAddr(b, a->cols - remainder + 2, resultCol + SIMD_VECTOR_SIZE * j));
-					__m256 aRemainderElems_i2 = _mm256_set1_ps(*(aRemainder_i + 2));
-					resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(aRemainderElems_i2, bRemainderElems_2j, resultElems[i * kernelWidth + j]);
+					__m256 b_remainder_element_2j = _mm256_load_ps(matrixf32GetAddr(b, a->cols - remainder + 2, result_column + SIMD_VECTOR_SIZE * j));
+					__m256 aRemainderElems_i2 = _mm256_set1_ps(*(a_remainder_element_i + 2));
+					result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i2, b_remainder_element_2j, result_elements[i * kernel_width + j]);
 				}
 				if (remainder > 3)
 				{
-					__m256 bRemainderElems_3j = _mm256_load_ps(MatrixGetAddr(b, a->cols - remainder + 3, resultCol + SIMD_VECTOR_SIZE * j));
-					__m256 aRemainderElems_i3 = _mm256_set1_ps(*(aRemainder_i + 3));
-					resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(aRemainderElems_i3, bRemainderElems_3j, resultElems[i * kernelWidth + j]);
+					__m256 b_remainder_element_3j = _mm256_load_ps(matrixf32GetAddr(b, a->cols - remainder + 3, result_column + SIMD_VECTOR_SIZE * j));
+					__m256 aRemainderElems_i3 = _mm256_set1_ps(*(a_remainder_element_i + 3));
+					result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i3, b_remainder_element_3j, result_elements[i * kernel_width + j]);
 				}
 				if (remainder > 4)
 				{
-					__m256 bRemainderElems_4j = _mm256_load_ps(MatrixGetAddr(b, a->cols - remainder + 4, resultCol + SIMD_VECTOR_SIZE * j));
-					__m256 aRemainderElems_i4 = _mm256_set1_ps(*(aRemainder_i + 4));
-					resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(aRemainderElems_i4, bRemainderElems_4j, resultElems[i * kernelWidth + j]);
+					__m256 b_remainder_element_4j = _mm256_load_ps(matrixf32GetAddr(b, a->cols - remainder + 4, result_column + SIMD_VECTOR_SIZE * j));
+					__m256 aRemainderElems_i4 = _mm256_set1_ps(*(a_remainder_element_i + 4));
+					result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i4, b_remainder_element_4j, result_elements[i * kernel_width + j]);
 				}
 				if (remainder > 5)
 				{
-					__m256 bRemainderElems_5j = _mm256_load_ps(MatrixGetAddr(b, a->cols - remainder + 5, resultCol + SIMD_VECTOR_SIZE * j));
-					__m256 aRemainderElems_i5 = _mm256_set1_ps(*(aRemainder_i + 5));
-					resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(aRemainderElems_i5, bRemainderElems_5j, resultElems[i * kernelWidth + j]);
+					__m256 b_remainder_element_5j = _mm256_load_ps(matrixf32GetAddr(b, a->cols - remainder + 5, result_column + SIMD_VECTOR_SIZE * j));
+					__m256 aRemainderElems_i5 = _mm256_set1_ps(*(a_remainder_element_i + 5));
+					result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i5, b_remainder_element_5j, result_elements[i * kernel_width + j]);
 				}
 				if (remainder > 6)
 				{
-					__m256 bRemainderElems_6j = _mm256_load_ps(MatrixGetAddr(b, a->cols - remainder + 6, resultCol + SIMD_VECTOR_SIZE * j));
-					__m256 aRemainderElems_i6 = _mm256_set1_ps(*(aRemainder_i + 6));
-					resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(aRemainderElems_i6, bRemainderElems_6j, resultElems[i * kernelWidth + j]);
+					__m256 b_remainder_element_6j = _mm256_load_ps(matrixf32GetAddr(b, a->cols - remainder + 6, result_column + SIMD_VECTOR_SIZE * j));
+					__m256 aRemainderElems_i6 = _mm256_set1_ps(*(a_remainder_element_i + 6));
+					result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i6, b_remainder_element_6j, result_elements[i * kernel_width + j]);
 				}
 			}
 		}
 	}
-	float *resultLocation = MatrixGetAddr(resultMatrix, resultRow, resultCol);
-	for (size_t i = 0; i < kernelHeight; i++)
+	float *result_location = matrixf32GetAddr(result_matrix, result_row, result_column);
+	for (size_t i = 0; i < kernel_height; i++)
 	{
-		for (size_t j = 0; j < kernelWidth; j++)
+		for (size_t j = 0; j < kernel_width; j++)
 		{
-			_mm256_store_ps(resultLocation + i * b->cols + j * SIMD_VECTOR_SIZE, resultElems[i * kernelWidth + j]);
+			_mm256_store_ps(result_location + i * b->cols + j * SIMD_VECTOR_SIZE, result_elements[i * kernel_width + j]);
 		}
 	}
 
@@ -524,191 +832,197 @@ void Microkernel(matrix_f32 *resultMatrix, const matrix_f32 *a, const matrix_f32
 
 /*
 If k is not divisible by SIMD_VECTOR_SIZE, handle the addition of the remaining elements
-void MicrokernelRemainder(const matrix_f32 *a, const matrix_f32 *b, float *resultLocation, size_t resultRow, size_t resultCol, size_t kernelWidth, size_t kernelHeight)
+void MicrokernelRemainder(const Matrixf32 *a, const Matrixf32 *b, float *result_location, size_t result_row, size_t result_column, size_t kernel_width, size_t kernel_height)
 {
 	size_t remainder = a->cols % SIMD_VECTOR_SIZE;
-	__m256 resultElems[32]:
-	for (size_t i = 0; i < kernelHeight; i++)
+	__m256 result_elements[32]:
+	for (size_t i = 0; i < kernel_height; i++)
 	{
-		for (size_t j = 0; j < kernelWidth; j++)
+		for (size_t j = 0; j < kernel_width; j++)
 		{
-			resultElems[i * kernelWidth + j] = _mm256_load_ps(0);
+			result_elements[i * kernel_width + j] = _mm256_load_ps(0);
 		}
 	}
-	for (size_t i = 0; i < kernelHeight; i++)
+	for (size_t i = 0; i < kernel_height; i++)
 	{
-		float *aRemainder_i = MatrixGetAddr(a, resultRow + i, a->cols - remainder);
-		for (size_t j = 0; j < kernelWidth; j++)
+		float *a_remainder_element_i = matrixGetAddr(a, result_row + i, a->cols - remainder);
+		for (size_t j = 0; j < kernel_width; j++)
 		{
-			__m256 bRemainderElems_0j = _mm256_load_ps(MatrixGetAddr(b, a->cols - remainder, resultCol + SIMD_VECTOR_SIZE * j));
-			__m256 aRemainderElems_i0 = _mm256_set1_ps(*aRemainder_i);
-			resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(aRemainderElems_i0, bRemainderElems_0j, resultElems[i * kernelWidth + j]);
+			__m256 b_remainder_element_0j = _mm256_load_ps(matrixGetAddr(b, a->cols - remainder, result_column + SIMD_VECTOR_SIZE * j));
+			__m256 aRemainderElems_i0 = _mm256_set1_ps(*a_remainder_element_i);
+			result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i0, b_remainder_element_0j, result_elements[i * kernel_width + j]);
 			if (remainder > 1)
 			{
-				__m256 bRemainderElems_1j = _mm256_load_ps(MatrixGetAddr(b, a->cols - remainder + 1, resultCol + SIMD_VECTOR_SIZE * j));
-				__m256 aRemainderElems_i1 = _mm256_set1_ps(*(aRemainder_i + 1));
-				resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(aRemainderElems_i1, bRemainderElems_1j, resultElems[i * kernelWidth + j]);
+				__m256 b_remainder_element_1j = _mm256_load_ps(matrixGetAddr(b, a->cols - remainder + 1, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 aRemainderElems_i1 = _mm256_set1_ps(*(a_remainder_element_i + 1));
+				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i1, b_remainder_element_1j, result_elements[i * kernel_width + j]);
 			}
 			if (remainder > 2)
 			{
-				__m256 bRemainderElems_2j = _mm256_load_ps(MatrixGetAddr(b, a->cols - remainder + 2, resultCol + SIMD_VECTOR_SIZE * j));
-				__m256 aRemainderElems_i2 = _mm256_set1_ps(*(aRemainder_i + 2));
-				resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(aRemainderElems_i2, bRemainderElems_2j, resultElems[i * kernelWidth + j]);
+				__m256 b_remainder_element_2j = _mm256_load_ps(matrixGetAddr(b, a->cols - remainder + 2, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 aRemainderElems_i2 = _mm256_set1_ps(*(a_remainder_element_i + 2));
+				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i2, b_remainder_element_2j, result_elements[i * kernel_width + j]);
 			}
 			if (remainder > 3)
 			{
-				__m256 bRemainderElems_3j = _mm256_load_ps(MatrixGetAddr(b, a->cols - remainder + 3, resultCol + SIMD_VECTOR_SIZE * j));
-				__m256 aRemainderElems_i3 = _mm256_set1_ps(*(aRemainder_i + 3));
-				resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(aRemainderElems_i3, bRemainderElems_3j, resultElems[i * kernelWidth + j]);
+				__m256 b_remainder_element_3j = _mm256_load_ps(matrixGetAddr(b, a->cols - remainder + 3, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 aRemainderElems_i3 = _mm256_set1_ps(*(a_remainder_element_i + 3));
+				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i3, b_remainder_element_3j, result_elements[i * kernel_width + j]);
 			}
 			if (remainder > 4)
 			{
-				__m256 bRemainderElems_4j = _mm256_load_ps(MatrixGetAddr(b, a->cols - remainder + 4, resultCol + SIMD_VECTOR_SIZE * j));
-				__m256 aRemainderElems_i4 = _mm256_set1_ps(*(aRemainder_i + 4));
-				resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(aRemainderElems_i4, bRemainderElems_4j, resultElems[i * kernelWidth + j]);
+				__m256 b_remainder_element_4j = _mm256_load_ps(matrixGetAddr(b, a->cols - remainder + 4, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 aRemainderElems_i4 = _mm256_set1_ps(*(a_remainder_element_i + 4));
+				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i4, b_remainder_element_4j, result_elements[i * kernel_width + j]);
 			}
 			if (remainder > 5)
 			{
-				__m256 bRemainderElems_5j = _mm256_load_ps(MatrixGetAddr(b, a->cols - remainder + 5, resultCol + SIMD_VECTOR_SIZE * j));
-				__m256 aRemainderElems_i5 = _mm256_set1_ps(*(aRemainder_i + 5));
-				resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(aRemainderElems_i5, bRemainderElems_5j, resultElems[i * kernelWidth + j]);
+				__m256 b_remainder_element_5j = _mm256_load_ps(matrixGetAddr(b, a->cols - remainder + 5, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 aRemainderElems_i5 = _mm256_set1_ps(*(a_remainder_element_i + 5));
+				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i5, b_remainder_element_5j, result_elements[i * kernel_width + j]);
 			}
 			if (remainder > 6)
 			{
-				__m256 bRemainderElems_6j = _mm256_load_ps(MatrixGetAddr(b, a->cols - remainder + 6, resultCol + SIMD_VECTOR_SIZE * j));
-				__m256 aRemainderElems_i6 = _mm256_set1_ps(*(aRemainder_i + 6));
-				resultElems[i * kernelWidth + j] = _mm256_fmadd_ps(aRemainderElems_i6, bRemainderElems_6j, resultElems[i * kernelWidth + j]);
+				__m256 b_remainder_element_6j = _mm256_load_ps(matrixGetAddr(b, a->cols - remainder + 6, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 aRemainderElems_i6 = _mm256_set1_ps(*(a_remainder_element_i + 6));
+				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i6, b_remainder_element_6j, result_elements[i * kernel_width + j]);
 			}
 		}
 	}
-	for (size_t i = 0; i < kernelHeight; i++)
+	for (size_t i = 0; i < kernel_height; i++)
 	{
-		for (size_t j = 0; j < kernelWidth; j++)
+		for (size_t j = 0; j < kernel_width; j++)
 		{
-			_mm256_store_ps(resultLocation, resultElems[i * kernelWidth + j]);
+			_mm256_store_ps(result_location, result_elements[i * kernel_width + j]);
 		}
 	}
 }*/
 #endif
 
-struct matrix_microkernel_row_task_info {
-	const matrix_f32 *leftMatrix;
-	const matrix_f32 *rightMatrix;
-	matrix_f32 *resultMatrix;
-	size_t resultRowNumber;
-	size_t kernelWidth;
-	size_t kernelHeight;
+struct Matrixf32MicrokernelTaskInfo {
+	const Matrixf32 *left_matrix;
+	const Matrixf32 *right_matrix;
+	Matrixf32 *result_matrix;
+	size_t result_row_number;
+	size_t kernel_width;
+	size_t kernel_height;
 };
 
 
-void MatrixMicrokernelRowTask(void *taskInfoInput) {
-	matrix_microkernel_row_task_info *taskInfo = reinterpret_cast<matrix_microkernel_row_task_info *>(taskInfoInput);
-	const matrix_f32 *a = taskInfo->leftMatrix;
-	const matrix_f32 *b = taskInfo->rightMatrix;
-	size_t row = taskInfo->resultRowNumber;
-	size_t kernelWidth = taskInfo->kernelWidth;
-	size_t kernelHeight = taskInfo->kernelHeight;
-	matrix_f32 *resultMatrix = taskInfo->resultMatrix;
-	size_t nCols = taskInfo->rightMatrix->cols / (kernelWidth * SIMD_VECTOR_SIZE);
-	for (size_t col = 0; col < nCols; col++) {
-		Microkernel(resultMatrix, a, b, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE, kernelWidth, kernelHeight);
+void matrixMicrokernelRowTask(void *microkernel_task_infoInput) {
+	Matrixf32MicrokernelTaskInfo *microkernel_task_info = reinterpret_cast<Matrixf32MicrokernelTaskInfo *>(microkernel_task_infoInput);
+	const Matrixf32 *a = microkernel_task_info->left_matrix;
+	const Matrixf32 *b = microkernel_task_info->right_matrix;
+	size_t row = microkernel_task_info->result_row_number;
+	size_t kernel_width = microkernel_task_info->kernel_width;
+	size_t kernel_height = microkernel_task_info->kernel_height;
+	Matrixf32 *result_matrix = microkernel_task_info->result_matrix;
+	size_t number_of_columns = microkernel_task_info->right_matrix->cols / (kernel_width * SIMD_VECTOR_SIZE);
+	for (size_t col = 0; col < number_of_columns; col++) {
+		matrixf32MicrokernelApply(result_matrix, a, b, row * kernel_height, col * kernel_width * SIMD_VECTOR_SIZE, kernel_width, kernel_height);
 	}
-	free(taskInfoInput);
+	free(microkernel_task_infoInput);
 }
 
 
 
-void Matrixf32MicrokernelMultiply(
-	matrix_f32 *result,
-	const matrix_f32 *a,
-	const matrix_f32 *b,
-	const size_t kernelWidth,
-	const size_t kernelHeight,
-	thread_pool *pool
+void matrixf32MicrokernelMultiply(
+	Matrixf32 *result,
+	const Matrixf32 *a,
+	const Matrixf32 *b,
+	const size_t kernel_width,
+	const size_t kernel_height,
+	ThreadPool *pool
 )
 {
 	assert(a->cols == b->rows);
 	assert(result->rows == a->rows);
 	assert(result->cols == b->cols);
 	assert(!!result->contents);
-	const size_t nRows = a->rows / kernelHeight;
-	const size_t rowRemainder = a->rows % kernelHeight;
-	const size_t nCols = b->cols / (kernelWidth * SIMD_VECTOR_SIZE);
-	bool skipMainBlock = nCols == 0; // if we don't have enough columns, skip the vectorized block
+	const size_t number_of_rows = a->rows / kernel_height;
+	const size_t remaining_rows_after_microkernel = a->rows % kernel_height;
+	const size_t number_of_columns = b->cols / (kernel_width * SIMD_VECTOR_SIZE);
+	bool skip_main_block = number_of_columns == 0; // if we don't have enough columns, skip the vectorized block
 	// const size_t colRemainder = a->cols % SIMD_VECTOR_SIZE;
-	// task_handle *futures = (task_handle *)malloc(sizeof(task_handle) * nRows);
+	// task_handle *futures = (task_handle *)malloc(sizeof(task_handle) * number_of_rows);
 	// Do the main block
-	if (!skipMainBlock) {
-		for (size_t row = 0; row < nRows; row++) {
+	if (!skip_main_block) {
+		for (size_t row = 0; row < number_of_rows; row++) {
 			// Each row defines a task. These are then run in parallel if there is a thread pool
 			// otherwise they are run sequentially 
 			/*
 			auto rowTask = [=, &result]() {
-				for (size_t col = 0; col < nCols; col++) {
-					float *resultLocation = MatrixGetAddr(&result, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE);
-					Microkernel(a, b, resultLocation, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE, kernelWidth, kernelHeight);
+				for (size_t col = 0; col < number_of_columns; col++) {
+					float *result_location = matrixGetAddr(&result, row * kernel_height, col * kernel_width * SIMD_VECTOR_SIZE);
+					Microkernel(a, b, result_location, row * kernel_height, col * kernel_width * SIMD_VECTOR_SIZE, kernel_width, kernel_height);
 					if (colRemainder) {
-						MicrokernelRemainder(a, b, resultLocation, row * kernelHeight, col * kernelWidth * SIMD_VECTOR_SIZE, kernelWidth, kernelHeight);
+						MicrokernelRemainder(a, b, result_location, row * kernel_height, col * kernel_width * SIMD_VECTOR_SIZE, kernel_width, kernel_height);
 					}
 				}
 				return true;
 			}; */
-			matrix_microkernel_row_task_info *taskInfo = (matrix_microkernel_row_task_info *)malloc(sizeof(matrix_microkernel_row_task_info));
-			taskInfo->kernelWidth = kernelWidth;
-			taskInfo->kernelHeight = kernelHeight;
-			taskInfo->leftMatrix = a;
-			taskInfo->rightMatrix = b;
-			taskInfo->resultRowNumber = row;
-			taskInfo->resultMatrix = result;
+			Matrixf32MicrokernelTaskInfo *microkernel_task_info = (Matrixf32MicrokernelTaskInfo *)malloc(sizeof(Matrixf32MicrokernelTaskInfo));
+			microkernel_task_info->kernel_width = kernel_width;
+			microkernel_task_info->kernel_height = kernel_height;
+			microkernel_task_info->left_matrix = a;
+			microkernel_task_info->right_matrix = b;
+			microkernel_task_info->result_row_number = row;
+			microkernel_task_info->result_matrix = result;
 
 
 			if (pool) {
-				PushTaskToQueue(taskInfo, &MatrixMicrokernelRowTask, &(pool->queue_));
+				concurrentTaskQueuePush(microkernel_task_info, &matrixMicrokernelRowTask, &(pool->task_queue));
 				// task_handle rowFuture = PushTaskToQueue(rowTask, &(pool->queue_));
 				// new(futures + row) task_handle(std::move(rowFuture));
-			} else {
-				MatrixMicrokernelRowTask(taskInfo);
+			}
+			else {
+				matrixMicrokernelRowTask(microkernel_task_info);
 			}
 		}
-		for (size_t row = 0; row < rowRemainder; row++) {
+		for (size_t row = 0; row < remaining_rows_after_microkernel; row++) {
 
-			matrix_microkernel_row_task_info *taskInfo = (matrix_microkernel_row_task_info *)malloc(sizeof(matrix_microkernel_row_task_info));
-			taskInfo->kernelWidth = kernelWidth;
-			taskInfo->kernelHeight = 1;
-			taskInfo->leftMatrix = a;
-			taskInfo->rightMatrix = b;
-			taskInfo->resultRowNumber = nRows * kernelHeight + row;
-			taskInfo->resultMatrix = result;
+			Matrixf32MicrokernelTaskInfo *microkernel_task_info = (Matrixf32MicrokernelTaskInfo *)malloc(sizeof(Matrixf32MicrokernelTaskInfo));
+			microkernel_task_info->kernel_width = kernel_width;
+			microkernel_task_info->kernel_height = 1;
+			microkernel_task_info->left_matrix = a;
+			microkernel_task_info->right_matrix = b;
+			microkernel_task_info->result_row_number = number_of_rows * kernel_height + row;
+			microkernel_task_info->result_matrix = result;
 
 			if (pool) {
-				PushTaskToQueue(taskInfo, &MatrixMicrokernelRowTask, &(pool->queue_));
-				// task_handle rowFuture = PushTaskToQueue(rowTask, &(pool->queue_));
-				// new(futures + row) task_handle(std::move(rowFuture));
-			} else {
-				MatrixMicrokernelRowTask(taskInfo);
+				concurrentTaskQueuePush(microkernel_task_info, &matrixMicrokernelRowTask, &(pool->task_queue));
+			// task_handle rowFuture = PushTaskToQueue(rowTask, &(pool->queue_));
+			// new(futures + row) task_handle(std::move(rowFuture));
 			}
-		}	
+			else {
+				matrixMicrokernelRowTask(microkernel_task_info);
+			}
+		}
 		if (pool) {
-			ThreadPoolActiveWait(pool);
-			ResetConcurrentTaskQueue(&(pool->queue_));
+			threadPoolActiveWait(pool);
+			concurrentTaskQueueReset(&(pool->task_queue));
 		}
 	}
 	// Clean up what is left (columns)
-	if (nCols * kernelWidth * SIMD_VECTOR_SIZE < b->cols)
+	if (number_of_columns * kernel_width * SIMD_VECTOR_SIZE < b->cols)
 	{
 		for (size_t i = 0; i < a->rows; i++)
 		{
 			const float *aRow = a->contents + i * a->cols;
-			float *resultRow = result->contents + i * result->cols;
+			float *result_row = result->contents + i * result->cols;
 			for (size_t k = 0; k < b->rows; k++)
 			{
 				const float *bRow = b->contents + k * b->cols;
 				const float Aik = aRow[k];
-				for (size_t j = nCols * kernelWidth * SIMD_VECTOR_SIZE; j < b->cols; j++)
+				for (size_t j = number_of_columns * kernel_width * SIMD_VECTOR_SIZE; j < b->cols; j++)
 				{
+					// is this compiler dependant? or just the overload issue?
+#ifdef __APPLE__
 					//todo(AION): same as above, this needs to be compiler dependant to be in line
-					// resultRow[j] += Aik * bRow[j];
-					resultRow[j] = fma(bRow[j], Aik, resultRow[j]);
+					result_row[j] += Aik * bRow[j];
+#else
+					result_row[j] = fmaf(bRow[j], Aik, result_row[j]);
+#endif
 
 				}
 			}
