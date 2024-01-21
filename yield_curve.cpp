@@ -173,3 +173,4 @@ int yieldCurveFloatStripSwaps(YieldCurveFloat *yield_curve, YieldCurveSwapF *swa
 	}
 	return 0;
 }
+
