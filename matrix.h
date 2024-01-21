@@ -4,7 +4,7 @@
 #pragma warning( disable: 4305 4244 6386)
 #endif
 #include <stdio.h>
-#include "threadpool.h"
+#include "threadpool_better.h"
 
 #define ABS(x) (((x) > 0) ? (x) : -(x))
 #define MAX_FLOAT 1e20
