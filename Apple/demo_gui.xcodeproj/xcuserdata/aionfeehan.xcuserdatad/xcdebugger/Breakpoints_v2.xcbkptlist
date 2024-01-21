@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Bucket
+   uuid = "8602141E-9A65-457D-BC9F-FCC046A353EA"
+   type = "1"
+   version = "2.0">
+   <Breakpoints>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "54AD02F9-7090-4D6E-82FE-D0F857F1AA54"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "main.mm"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "220"
+            endingLineNumber = "220"
+            landmarkName = "-updateIOWithTouchEvent:"
+            landmarkType = "7">
+            <Locations>
+               <Location
+                  uuid = "54AD02F9-7090-4D6E-82FE-D0F857F1AA54 - ea53751776ecf842"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "-[AppViewController updateIOWithTouchEvent:]"
+                  moduleName = "example_apple_metal"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/aionfeehan/Github/analytics/imgui/examples/example_apple_metal/main.mm"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "226"
+                  endingLineNumber = "226"
+                  offsetFromSymbolStart = "292">
+               </Location>
+               <Location
+                  uuid = "54AD02F9-7090-4D6E-82FE-D0F857F1AA54 - ea53751776ecf842"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "-[AppViewController updateIOWithTouchEvent:]"
+                  moduleName = "example_apple_metal"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/aionfeehan/Github/analytics/imgui/examples/example_apple_metal/main.mm"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "226"
+                  endingLineNumber = "226"
+                  offsetFromSymbolStart = "300">
+               </Location>
+            </Locations>
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "175A9429-CA63-48B7-80E0-9B5BDC142A37"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "main.mm"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "247"
+            endingLineNumber = "247"
+            landmarkName = "-updateIOWithTouchEvent:"
+            landmarkType = "7">
+            <Locations>
+               <Location
+                  uuid = "175A9429-CA63-48B7-80E0-9B5BDC142A37 - ea53751776ecfb05"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "-[AppViewController updateIOWithTouchEvent:]"
+                  moduleName = "example_apple_metal"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/aionfeehan/Github/analytics/imgui/examples/example_apple_metal/main.mm"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "251"
+                  endingLineNumber = "251"
+                  offsetFromSymbolStart = "1284">
+               </Location>
+               <Location
+                  uuid = "175A9429-CA63-48B7-80E0-9B5BDC142A37 - ea53751776ecf4e4"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "-[AppViewController updateIOWithTouchEvent:]"
+                  moduleName = "example_apple_metal"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/aionfeehan/Github/analytics/imgui/examples/example_apple_metal/main.mm"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "252"
+                  endingLineNumber = "252"
+                  offsetFromSymbolStart = "1288">
+               </Location>
+            </Locations>
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "428C02B9-4968-48BB-BBC4-5AAC9859B398"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "main.mm"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "222"
+            endingLineNumber = "222"
+            landmarkName = "-updateIOWithTouchEvent:"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+   </Breakpoints>
+</Bucket>
