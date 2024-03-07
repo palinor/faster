@@ -157,8 +157,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="options.cpp" />
+    <ClCompile Include="imgui_interface.cpp" />
     <ClCompile Include="matrix.cpp" />
     <ClCompile Include="parse_dtcc.cpp" />
+    <ClCompile Include="solvers.cpp" />
     <ClCompile Include="threadpool.cpp" />
     <ClCompile Include="winmain.cpp">
       <CustomUnityFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</CustomUnityFile>

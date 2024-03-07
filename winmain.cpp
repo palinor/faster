@@ -1,21 +1,9 @@
-#include "imgui_draw.cpp"
-#include "imgui_tables.cpp"
-#include "imgui_widgets.cpp"
-#include "imgui.cpp"
-#include "imgui_impl_win32.cpp"
-#include "imgui_impl_dx12.cpp"
-#include "imgui_demo.cpp"
-
-#include "implot_items.cpp"
-#include "implot.cpp"
 
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include <tchar.h>
 
-#include "yield_curve.cpp"
-#include "parse_dtcc.cpp"
-
+#include "imgui_interface.cpp"
 
 #define global_variable static
 #define local_persist static
@@ -117,49 +105,17 @@ int main(int, char *) {
 
 	bool done = false;
 
-	size_t n_swaps = 2048;
 
 	size_t number_of_fras = 8;
 	size_t number_of_swaps = 5;
 	size_t number_of_plot_points = 200;
-	float *fra_times_to_maturity = (float *)malloc(number_of_fras * sizeof(float));
-	float *forward_rates = (float *)malloc(number_of_fras * sizeof(float));
-	float *swap_fixed_payment_schedule = (float *)malloc(number_of_swaps * sizeof(float));
-	float *swap_rates = (float *)malloc(number_of_swaps * sizeof(float));
-	YieldCurveFloat yield_curve;
+	size_t number_of_cms = 5;
+	float cms_maturity = 10;
+	size_t number_of_strikes = 200;
+	float floater_width = 200;
+	DisplayData data;
+	displayDataInit(&data, number_of_fras, number_of_swaps, number_of_plot_points, number_of_cms, number_of_strikes, cms_maturity, floater_width);
 
-	float *plot_maturities = (float *)malloc(number_of_plot_points *sizeof(float));
-	float *plot_short_rates = (float *)malloc(number_of_plot_points *sizeof(float));
-	float *plot_discount_factors = (float *)malloc(number_of_plot_points *sizeof(float));
-
-	for (size_t i = 0; i < number_of_fras; ++i) {
-		fra_times_to_maturity[i] = 0.25 * (i + 1);
-		forward_rates[i] = 0.05 + i * 0.005;
-	}
-
-	swap_fixed_payment_schedule[0] = 5;
-	swap_fixed_payment_schedule[1] = 7;
-	swap_fixed_payment_schedule[2] = 10;
-	swap_fixed_payment_schedule[3] = 15;
-	swap_fixed_payment_schedule[4] = 30;
-
-	for (size_t i = 0; i < number_of_swaps; ++i) {
-		swap_rates[i] = 0.05 + i * 0.01;
-	}
-
-	for (size_t i = 0; i < number_of_plot_points; ++i) {
-		plot_maturities[i] = i;
-		plot_short_rates[i] = 0;
-		plot_discount_factors[i] = 0;
-	}
-
-	YieldCurveSwapF *swap_list = (YieldCurveSwapF *)calloc(number_of_swaps, sizeof(YieldCurveSwapF));
-	for (size_t i = 0; i < number_of_swaps; ++i) {
-		size_t number_fixed_payments = (size_t)(*(swap_fixed_payment_schedule + i));
-		size_t number_floating_payments = 10;
-		yieldCurveSwapFInit(swap_list + i, number_fixed_payments, number_floating_payments, swap_rates[i]);
-	}
-	float slider_width = 200;
 
 	while (!done) {
 		MSG message;
@@ -178,73 +134,7 @@ int main(int, char *) {
 		ImGui_ImplWin32_NewFrame();
 		ImGui::NewFrame();
 
-		{
-			local_persist float f = 0.0f;
-			local_persist int counter = 0;
-
-			ImGui::Begin("Yield curve viewer");
-
-			if (ImPlot::BeginPlot("Yield Curve USD")) {
-				ImPlot::PlotLine("Short Rate", plot_maturities, plot_short_rates, number_of_plot_points);
-				ImPlot::PlotLine("Discount Factors", plot_maturities, plot_discount_factors, number_of_plot_points);
-				ImPlot::EndPlot();
-			}
-
-			for (size_t fra_idx = 0; fra_idx < number_of_fras; ++fra_idx) {
-
-				char fra_end_label[32];
-				char forward_rate_label[32];
-				snprintf(fra_end_label, 32, "Fra %i end", fra_idx + 1);
-				snprintf(forward_rate_label, 32, "Forward %i", fra_idx + 1);
-
-				ImGui::PushItemWidth(slider_width);
-				ImGui::SliderFloat(fra_end_label, fra_times_to_maturity + fra_idx, 0, *swap_fixed_payment_schedule);
-				ImGui::SameLine();
-				ImGui::SliderFloat(forward_rate_label, forward_rates + fra_idx, -0.02, 0.2);
-			}
-			float minimal_swap_maturity = fra_times_to_maturity[number_of_fras - 1];
-
-			for (size_t swap_idx = 0; swap_idx < number_of_swaps; ++swap_idx) {
-				char swap_end_label[32];
-				char swap_rate_label[32];
-				snprintf(swap_end_label, 32, "Swap %i end", swap_idx + 1);
-				snprintf(swap_rate_label, 32, "Swap %i", swap_idx + 1);
-
-				ImGui::PushItemWidth(slider_width);
-				ImGui::SliderFloat(swap_end_label, swap_fixed_payment_schedule + swap_idx, minimal_swap_maturity, 50);
-				ImGui::SameLine();
-				ImGui::SliderFloat(swap_rate_label, swap_rates + swap_idx, -0.02, 0.2);
-				swap_list[swap_idx].swap_rate = *(swap_rates + swap_idx);
-				minimal_swap_maturity = swap_fixed_payment_schedule[swap_idx];
-			}
-
-
-			yieldCurveFloatStripFras(&yield_curve, forward_rates, fra_times_to_maturity, number_of_fras);
-			yieldCurveFloatStripSwaps(&yield_curve, swap_list, swap_rates, number_of_swaps, number_of_fras);
-			float *this_short_rate = yield_curve.short_rates;
-			float *this_yield_curve_maturity_time = yield_curve.interpolation_times;
-			float this_maturity_time = 0;
-			float first_maturity_time = 0;
-			float last_maturity_time = yield_curve.interpolation_times[yield_curve.number_of_points - 1];
-			float plot_maturity_step = (last_maturity_time - first_maturity_time) / ((float)number_of_plot_points);
-			float log_discount_factor = 0;
-			for (size_t i = 0; i < number_of_plot_points; ++i) {
-				this_maturity_time += plot_maturity_step;
-				if (this_maturity_time > *this_yield_curve_maturity_time) {
-					++this_yield_curve_maturity_time;
-					++this_short_rate;
-				}
-				log_discount_factor -= *this_short_rate * plot_maturity_step;
-				plot_maturities[i] = this_maturity_time;
-				plot_short_rates[i] = *this_short_rate;
-				plot_discount_factors[i] = expf(log_discount_factor);
-			}
-
-			ImGui::SameLine();
-			ImGui::Text("Counter = %d", counter);
-			ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / input_output.Framerate, input_output.Framerate);
-			ImGui::End();
-		}
+		imGuiRenderLoop(&data);
 
 		ImGui::Render();
 
@@ -294,8 +184,7 @@ int main(int, char *) {
 		global_fence_last_signaled_value = fence_value;
 		frame_context->fence_value = fence_value;
 	}
-
-	free(swap_list);
+	displayDataFree(&data);
 
 	WaitForLastSubmittedFrame();
 
