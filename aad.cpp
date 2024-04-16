@@ -2,87 +2,116 @@
 #include <cassert>
 #include <cmath>
 
-const size_t TAPE_SIZE = 100;
-struct float_tape_node {
+const size_t TAPE_SIZE = 1024;
+
+struct TapeNodeFloat {
+	float weights[2];
+	size_t parents[2];
+};
+
+struct TapeNodeDouble {
 	double weights[2];
 	size_t parents[2];
 };
 
-struct float_grad {
-	float *derivs_;
-	size_t derivsSize_;
+struct TapeGradientFloat {
+	float *derivatives;
+	size_t number_of_derivatives;
 };
 
-struct float_tape {
-	size_t node_index_;
-	float_tape_node *nodes_;
-	size_t nNodes_;
+struct TapeGradientDouble {
+	double *derivatives;
+	size_t number_of_derivatives;
 };
 
-struct aad_float {
-	float_tape *tape_;
-	size_t index_;
-	float value_;
+struct TapeFloat {
+	size_t current_node_index;
+	TapeNodeFloat *nodes;
+	size_t number_of_nodes;
 };
 
-aad_float AddFloatToTape(float x, float_tape *tape) {
-	assert(tape->node_index_ + 1 < tape->nNodes_);
-	aad_float result;
-	result.index_ = tape->node_index_;
-	result.tape_ = tape;
-	result.value_ = x;
-	float_tape_node *newNode = tape->nodes_ + tape->node_index_;
-	tape->node_index_++;
-	newNode->weights[0] = 0;
-	newNode->weights[1] = 0;
-	newNode->parents[0] = 1;
-	newNode->parents[1] = 1;
-	return result;
+struct TapeDouble {
+	size_t current_node_index;
+	TapeNodeDouble *nodes;
+	size_t number_of_nodes;
+};
+
+struct AadFloat {
+	TapeFloat *tape;
+	size_t index_on_tape;
+	float value;
+};
+
+struct AadDouble {
+	TapeDouble *tape;
+	size_t index_on_tape;
+	double value;
+};
+
+int append_float_to_tape(AadFloat *result, float x, TapeFloat *tape) {
+	assert(tape->current_node_index + 1 < tape->number_of_nodes);
+	result->index_on_tape = tape->current_node_index;
+	result->value = x;
+	TapeNodeFloat *new_node = tape->nodes + tape->current_node_index;
+	++tape->current_node_index;
+	new_node->weights[0] = 0;
+	new_node->weights[1] = 0;
+	new_node->parents[0] = 1;
+	new_node->parents[1] = 1;
+	return 0;
 }
 
-aad_float AddFunctionOfXToTape(size_t xIndex, float fX, float fDerivative, float_tape *tape) {
-	assert(tape->node_index_ + 1 < tape->nNodes_);
-	aad_float result;
-	result.index_ = tape->node_index_;
-	result.tape_ = tape;
-	result.value_ = fX;
-	float_tape_node *newNode = tape->nodes_ + tape->node_index_;
-	tape->node_index_++;
-	newNode->weights[0] = fDerivative;
-	newNode->weights[1] = 0;
-	newNode->parents[0] = xIndex;
-	newNode->parents[1] = 1;
-	return result;
+int append_function_of_x_to_tape_float(AadFloat *result, size_t x_index, float f_x, float f_derivative, TapeFloat *tape) {
+	assert(tape->current_node_index + 1 < tape->number_of_nodes);
+	result->index_on_tape = tape->current_node_index;
+	result->tape = tape;
+	result->value = f_x;
+	TapeNodeFloat *new_node = tape->nodes + tape->current_node_index;
+	++tape->current_node_index;
+	new_node->weights[0] = f_derivative;
+	new_node->weights[1] = 0;
+	new_node->parents[0] = x_index;
+	new_node->parents[1] = 1;
+	return 0;
 }
 
-aad_float AddFunctionOfXYToTape(size_t xIndex, size_t yIndex, float fXY, float fDerivativeX, float fDerivativeY, float_tape *tape) {
-	assert(tape->node_index_ + 1 < tape->nNodes_);
-	aad_float result;
-	result.index_ = tape->node_index_;
-	result.tape_ = tape;
-	result.value_ = fXY;
-	float_tape_node *newNode = tape->nodes_ + tape->node_index_;
-	tape->node_index_++;
-	newNode->weights[0] = fDerivativeX;
-	newNode->weights[1] = fDerivativeY;
-	newNode->parents[0] = xIndex;
-	newNode->parents[1] = yIndex;
-	return result;
+int append_function_of_x_y_to_tape_float(AadFloat *result, size_t x_index, size_t y_index, float f_x_y, float f_derivative_x, float f_derivative_y, TapeFloat *tape) {
+	assert(tape->current_node_index + 1 < tape->number_of_nodes);
+	result->index_on_tape = tape->current_node_index;
+	result->tape = tape;
+	result->value = f_x_y;
+	TapeNodeFloat *new_node = tape->nodes + tape->current_node_index;
+	++tape->current_node_index;
+	new_node->weights[0] = f_derivative_x;
+	new_node->weights[1] = f_derivative_y;
+	new_node->parents[0] = x_index;
+	new_node->parents[1] = y_index;
+	return 0;
 }
 
 
-aad_float operator+(aad_float x, aad_float y) {
-	assert(x.tape_ == y.tape_);
-	aad_float result = AddFunctionOfXYToTape(x.index_, y.index_, x.value_ + y.value_, 1, 1, x.tape_);
-	return result;
+AadFloat operator+(const AadFloat &x, const AadFloat &y) {
+	assert(x.tape == y.tape);
+	AadFloat result;
+	append_function_of_x_y_to_tape_float(
+		&result, 
+		x.index_on_tape, 
+		y.index_on_tape, 
+		x.value + y.value, 
+		1, 
+		1, 
+		x.tape
+		);
+	return std::move(result);
 }
 
-aad_float operator+(float x, aad_float y) {
-	aad_float xNew = AddFloatToTape(x, y.tape_);
-	return xNew + y;
+AadFloat operator+(float x, AadFloat y) {
+	AadFloat x_new;
+	append_float_to_tape(&x_new, x, y.tape);
+	return std::move(x_new + y);
 }
 
-aad_float operator+(aad_float x, float y) {
+AadFloat operator+(aad_float x, float y) {
 	aad_float yNew = AddFloatToTape(y, x.tape_);
 	return x + yNew;
 }
