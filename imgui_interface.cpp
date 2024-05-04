@@ -1,5 +1,8 @@
 #include <math.h>
 #include <stdio.h>
+#include "imgui.h"
+#include "imgui_impl_win32.h"
+#include "imgui_impl_dx12.h"
 #include "imgui_draw.cpp"
 #include "imgui_tables.cpp"
 #include "imgui_widgets.cpp"
@@ -321,7 +324,7 @@ void imGuiRenderLoop(DisplayData *data) {
 		float *this_smile = data->normal_vols + data->number_of_strikes * i;
 		float *this_strike = data->strikes;
 		for (size_t k = 0; k < data->number_of_strikes; ++k) {
-			*(this_smile + k) = shiftedSabrImpliedNormalVol(
+			*(this_smile + k) = ShiftedSabrImpliedNormalVol(
 				forward,
 				*this_strike++,
 				*this_time_to_maturity,
@@ -332,7 +335,7 @@ void imGuiRenderLoop(DisplayData *data) {
 				data->shifted_sabr_params->zeta
 			);
 		}
-		*this_cms_value++ = cmsReplicationForwardPremium(forward, this_smile, data->strikes, data->number_of_strikes, *this_time_to_maturity++, 1, data->cms_maturity);
+		*this_cms_value++ = CmsReplicationForwardPremium(forward, this_smile, data->strikes, data->number_of_strikes, *this_time_to_maturity++, 1, data->cms_maturity);
 	}
 	ImGui::End();
 

@@ -48,7 +48,7 @@ struct AadDouble {
 	double value;
 };
 
-int append_float_to_tape(AadFloat *result, float x, TapeFloat *tape) {
+int AadFloatInit(AadFloat *result, float x, TapeFloat *tape) {
 	assert(tape->current_node_index + 1 < tape->number_of_nodes);
 	result->index_on_tape = tape->current_node_index;
 	result->value = x;
@@ -61,7 +61,7 @@ int append_float_to_tape(AadFloat *result, float x, TapeFloat *tape) {
 	return 0;
 }
 
-int append_function_of_x_to_tape_float(AadFloat *result, size_t x_index, float f_x, float f_derivative, TapeFloat *tape) {
+int AddSingleVariableStepToTape(AadFloat *result, size_t x_index, float f_x, float f_derivative, TapeFloat *tape) {
 	assert(tape->current_node_index + 1 < tape->number_of_nodes);
 	result->index_on_tape = tape->current_node_index;
 	result->tape = tape;
@@ -75,7 +75,7 @@ int append_function_of_x_to_tape_float(AadFloat *result, size_t x_index, float f
 	return 0;
 }
 
-int append_function_of_x_y_to_tape_float(AadFloat *result, size_t x_index, size_t y_index, float f_x_y, float f_derivative_x, float f_derivative_y, TapeFloat *tape) {
+int AddDoubleVariableStepToTape(AadFloat *result, size_t x_index, size_t y_index, float f_x_y, float f_derivative_x, float f_derivative_y, TapeFloat *tape) {
 	assert(tape->current_node_index + 1 < tape->number_of_nodes);
 	result->index_on_tape = tape->current_node_index;
 	result->tape = tape;
@@ -93,129 +93,193 @@ int append_function_of_x_y_to_tape_float(AadFloat *result, size_t x_index, size_
 AadFloat operator+(const AadFloat &x, const AadFloat &y) {
 	assert(x.tape == y.tape);
 	AadFloat result;
-	append_function_of_x_y_to_tape_float(
-		&result, 
-		x.index_on_tape, 
-		y.index_on_tape, 
-		x.value + y.value, 
-		1, 
-		1, 
+	AddDoubleVariableStepToTape(
+		&result,
+		x.index_on_tape,
+		y.index_on_tape,
+		x.value + y.value,
+		1,
+		1,
 		x.tape
-		);
-	return std::move(result);
+	);
+	return result;
 }
 
 AadFloat operator+(float x, AadFloat y) {
 	AadFloat x_new;
-	append_float_to_tape(&x_new, x, y.tape);
-	return std::move(x_new + y);
+	AadFloatInit(&x_new, x, y.tape);
+	return x_new + y;
 }
 
-AadFloat operator+(aad_float x, float y) {
-	aad_float yNew = AddFloatToTape(y, x.tape_);
-	return x + yNew;
+AadFloat operator+(AadFloat x, float y) {
+	AadFloat y_new;
+	AadFloatInit(&y_new, y, x.tape);
+	return x + y_new;
 }
 
-aad_float operator-(aad_float x, aad_float y) {
-	assert(x.tape_ == y.tape_);
-	return AddFunctionOfXYToTape(x.index_, y.index_, x.value_ - y.value_, 1, -1, x.tape_);
-}
-
-aad_float operator-(float x, aad_float y) {
-	aad_float xNew = AddFloatToTape(x, y.tape_);
-	return xNew - y;
-}
-
-aad_float operator-(aad_float x, float y) {
-	aad_float yNew = AddFloatToTape(y, x.tape_);
-	return x - yNew;
-}
-
-aad_float operator*(aad_float x, aad_float y) {
-	assert(x.tape_ == y.tape_);
-	return AddFunctionOfXYToTape(x.index_, y.index_, x.value_ * y.value_, y.value_, x.value_, x.tape_);
-}
-
-aad_float operator*(float x, aad_float y) {
-	aad_float xNew = AddFloatToTape(x, y.tape_);
-	return xNew * y;
-}
-
-aad_float operator*(aad_float x, float y) {
-	aad_float yNew = AddFloatToTape(y, x.tape_);
-	return x * yNew;
-}
-
-aad_float operator/(aad_float x, aad_float y) {
-	assert(x.tape_ == y.tape_);
-	float fXY = x.value_ / y.value_;
-	float dfX = 1 / y.value_;
-	float dfY = -x.value_ / (y.value_ * y.value_);
-	return AddFunctionOfXYToTape(x.index_, y.index_, fXY, dfX, dfY, x.tape_);
-}
-
-aad_float operator/(float x, aad_float y) {
-	aad_float xNew = AddFloatToTape(x, y.tape_);
-	return xNew / y;
-}
-
-aad_float operator/(aad_float x, float y) {
-	aad_float yNew = AddFloatToTape(y, x.tape_);
-	return x / yNew;
-}
-
-aad_float exp(aad_float x) {
-	return AddFunctionOfXToTape(x.index_, std::exp(x.value_), std::exp(x.value_), x.tape_);
-}
-
-aad_float log(aad_float x) {
-	return AddFunctionOfXToTape(x.index_, std::log(x.value_), 1 / x.value_, x.tape_);
-}
-
-aad_float pow(aad_float x, aad_float y) {
-	assert(x.tape_ == y.tape_);
-	return exp(y * log(x));
-}
-
-aad_float pow(aad_float x, float y) {
-	aad_float yNew = AddFloatToTape(y, x.tape_);
-	return pow(x, yNew);
-}
-
-aad_float sqrt(aad_float x) {
-	return AddFunctionOfXToTape(x.index_, std::sqrt(x.value_), 1 / (2 * std::sqrt(x.value_)), x.tape_);
-}
-
-float GradientWithRespectTo(float_grad *grad, aad_float x) {
-	return grad->derivs_[x.index_];
-}
-
-float_grad ComputeGradient(aad_float *finalValue) {
-	float_grad result;
-	size_t nGrads = finalValue->index_ + 1;
-	result.derivs_ = reinterpret_cast<float *>(calloc(nGrads, sizeof(float)));
-	result.derivsSize_ = nGrads;
-	result.derivs_[nGrads - 1] = 1;
-	for (size_t k = 1; k <= result.derivsSize_; k++) {
-		size_t i = result.derivsSize_ - k;
-		float_tape_node node = finalValue->tape_->nodes_[i];
-		float deriv = result.derivs_[i];
-		result.derivs_[node.parents[0]] += node.weights[0] * deriv;
-		result.derivs_[node.parents[1]] += node.weights[1] * deriv;
-	}
+AadFloat operator-(const AadFloat &x, const AadFloat &y) {
+	assert(x.tape == y.tape);
+	AadFloat result;
+	AddDoubleVariableStepToTape(
+		&result,
+		x.index_on_tape,
+		y.index_on_tape,
+		x.value - y.value,
+		1,
+		-1,
+		x.tape);
 	return result;
 }
 
+AadFloat operator-(float x, AadFloat y) {
+	AadFloat x_new;
+	AadFloatInit(&x_new, x, y.tape);
+	return x_new - y;
+}
+
+AadFloat operator-(AadFloat x, float y) {
+	AadFloat y_new;
+	AadFloatInit(&y_new, y, x.tape);
+	return x - y_new;
+}
+
+AadFloat operator*(AadFloat x, AadFloat y) {
+	assert(x.tape == y.tape);
+	AadFloat result;
+	AddDoubleVariableStepToTape(
+		&result,
+		x.index_on_tape,
+		y.index_on_tape,
+		x.value * y.value,
+		y.value,
+		x.value,
+		x.tape
+	);
+	return result;
+}
+
+AadFloat operator*(float x, AadFloat y) {
+	AadFloat x_new;
+	AadFloatInit(&x_new, x, y.tape);
+	return x_new * y;
+}
+
+AadFloat operator*(AadFloat x, float y) {
+	AadFloat y_new;
+	AadFloatInit(&y_new, y, x.tape);
+	return x * y_new;
+}
+
+AadFloat operator/(AadFloat x, AadFloat y) {
+	assert(x.tape == y.tape);
+	float fXY = x.value / y.value;
+	float dfX = 1 / y.value;
+	float dfY = -x.value / (y.value * y.value);
+	AadFloat result;
+	AddDoubleVariableStepToTape(
+		&result,
+		x.index_on_tape,
+		y.index_on_tape,
+		fXY,
+		dfX,
+		dfY,
+		x.tape
+	);
+	return result;
+}
+
+AadFloat operator/(float x, AadFloat y) {
+	AadFloat x_new;
+	AadFloatInit(&x_new, x, y.tape);
+	return x_new / y;
+}
+
+AadFloat operator/(AadFloat x, float y) {
+	AadFloat y_new;
+	AadFloatInit(&y_new, y, x.tape);
+	return x / y_new;
+}
+
+AadFloat exp(AadFloat x) {
+	AadFloat result;
+	AddSingleVariableStepToTape(
+		&result,
+		x.index_on_tape,
+		std::expf(x.value),
+		std::expf(x.value),
+		x.tape
+	);
+	return result;
+}
+
+AadFloat log(AadFloat x) {
+	AadFloat result;
+	AddSingleVariableStepToTape(
+		&result,
+		x.index_on_tape,
+		std::logf(x.value),
+		1 / x.value,
+		x.tape
+	);
+	return result;
+}
+
+AadFloat pow(AadFloat x, AadFloat y) {
+	assert(x.tape == y.tape);
+	return exp(y * log(x));
+}
+
+AadFloat pow(AadFloat x, float y) {
+	AadFloat y_new;
+	AadFloatInit(&y_new, y, x.tape);
+	return pow(x, y_new);
+}
+
+AadFloat sqrt(AadFloat x) {
+	AadFloat result;
+	AddSingleVariableStepToTape(
+		&result,
+		x.index_on_tape,
+		std::sqrtf(x.value),
+		1 / (2 * std::sqrtf(x.value)),
+		x.tape
+	);
+	return result;
+}
+
+float gradient_with_respect_to(TapeGradientFloat *grad, AadFloat x) {
+	return grad->derivatives[x.index_on_tape];
+}
+
+int PopulateTapeGradient(TapeGradientFloat *result, AadFloat *final_value) {
+	size_t number_of_derivatives = final_value ->index_on_tape + 1;
+	void *new_derivative_block = calloc(number_of_derivatives, sizeof(float));
+	if (!new_derivative_block) {
+		return -1;
+	}
+	result->derivatives = reinterpret_cast<float *>(new_derivative_block);
+	result->number_of_derivatives = number_of_derivatives;
+	result->derivatives[number_of_derivatives - 1] = 1;
+	for (size_t k = 1; k <= number_of_derivatives; k++) {
+		size_t i = number_of_derivatives - k;
+		TapeNodeFloat *node = final_value->tape->nodes + i;
+		float derivative = result->derivatives[i];
+		result->derivatives[node->parents[0]] += node->weights[0] * derivative;
+		result->derivatives[node->parents[1]] += node->weights[1] * derivative;
+	}
+	return 0;
+}
+
 void AadTests() {
-	float_tape t;
+	TapeFloat t;
 	const size_t maxTapeSize = 256;
-	t.nodes_ = reinterpret_cast<float_tape_node *>(malloc(maxTapeSize * sizeof(float_tape_node)));
-	t.node_index_ = 0;
-	t.nNodes_ = maxTapeSize;
-	aad_float x = AddFloatToTape(9, &t);
-	aad_float y = AddFloatToTape(0.5, &t);
-	aad_float z1 = x * y;
-	aad_float z2 = pow(x, y);
+	t.nodes = reinterpret_cast<float.tapenode *>(malloc(maxTapeSize * sizeof(float.tapenode)));
+	t.nodes.index = 0;
+	t.number_of_nodes = maxTapeSize;
+	AadFloat x = AddFloatToTape(9, &t);
+	AadFloat y = AddFloatToTape(0.5, &t);
+	AadFloat z1 = x * y;
+	AadFloat z2 = pow(x, y);
 
 	float_grad grad1 = ComputeGradient(&z1);
 	float_grad grad2 = ComputeGradient(&z2);
@@ -224,55 +288,55 @@ void AadTests() {
 	float dz2dx = GradientWithRespectTo(&grad2, x);
 	float dz2dy = GradientWithRespectTo(&grad2, y);
 
-	assert(fabs(dz1dx - y.value_) < 1e-15);
-	assert(fabs(dz1dy - x.value_) < 1e-15);
-	assert(fabs(dz2dy - (log(x) * z2).value_) < 1e-15);
-	assert(fabs(dz2dx - 1 / (2 * z2.value_)) < 1e-15);
+	assert(fabs(dz1dx - y.value) < 1e-15);
+	assert(fabs(dz1dy - x.value) < 1e-15);
+	assert(fabs(dz2dy - (log(x) * z2).value) < 1e-15);
+	assert(fabs(dz2dx - 1 / (2 * z2.value)) < 1e-15);
 
 	return;
 }
 
-struct aad_float_shifted_sabr_params {
-	aad_float forward_;
-	aad_float sigma0_;
-	aad_float alpha_;
-	aad_float beta_;
-	aad_float rho_;
-	aad_float zeta_;
-	aad_float timeToExpiry_;
+struct AadFloat_shifted_sabr_params {
+	AadFloat forward_;
+	AadFloat sigma0_;
+	AadFloat alpha_;
+	AadFloat beta_;
+	AadFloat rho_;
+	AadFloat zeta_;
+	AadFloat timeToExpiry_;
 };
 
 //todo(AION): there is a bug in here somewhere. Need to double check the formula:w
-aad_float AadFloatShiftedSabr(aad_float strike, aad_float_shifted_sabr_params *params) {
-	aad_float moneyness = params->forward_ - strike;
-	aad_float shiftedForward = params->forward_ + params->zeta_;
-	aad_float shiftedStrike = strike + params->zeta_;
-	aad_float i0;
-	if (fabs(moneyness.value_) < 1e-8) {
+AadFloat AadFloatShiftedSabr(AadFloat strike, AadFloat_shifted_sabr_params *params) {
+	AadFloat moneyness = params->forward_ - strike;
+	AadFloat shiftedForward = params->forward_ + params->zeta_;
+	AadFloat shiftedStrike = strike + params->zeta_;
+	AadFloat i0;
+	if (fabs(moneyness.value) < 1e-8) {
 		i0 = params->sigma0_ * pow(shiftedForward, params->beta_);
 	}
 	else {
-		aad_float z;
-		if (params->beta_.value_ > 1 - 1e-8) {
+		AadFloat z;
+		if (params->beta_.value > 1 - 1e-8) {
 			z = params->alpha_ * moneyness / params->sigma0_;
 		}
 		else {
-			aad_float betaInv = 1 - params->beta_;
+			AadFloat betaInv = 1 - params->beta_;
 			z = params->alpha_ / params->sigma0_ * (pow(shiftedForward, betaInv) - pow(shiftedStrike, betaInv)) / betaInv;
 		}
-		aad_float inSqrtTerm = 1 - 2 * params->rho_ * z + z * z;
+		AadFloat inSqrtTerm = 1 - 2 * params->rho_ * z + z * z;
 		i0 = params->alpha_ * moneyness / log((sqrt(inSqrtTerm) + z - params->rho_) / (1 - params->rho_));
 
 	}
 
-	aad_float beta2 = params->beta_ * params->beta_;
-	aad_float sigma02 = params->sigma0_ * params->sigma0_;
-	aad_float rho2 = params->rho_ * params->rho_;
-	aad_float alpha2 = params->alpha_ * params->alpha_;
-	aad_float i1Term1 = ((beta2 - 2 * params->beta_) * sigma02) / (24 * pow((shiftedStrike + shiftedForward) / 2, 2 * (1 - params->beta_)));
-	aad_float i1Term2 = (params->rho_ * params->alpha_ * params->beta_ * params->sigma0_) / (4 * pow((shiftedStrike + shiftedForward) / 2, 1 - params->beta_));
-	aad_float i1Term3 = ((2 - 3 * rho2) * alpha2) / 24;
-	aad_float i1 = i1Term1 + i1Term2 + i1Term3;
+	AadFloat beta2 = params->beta_ * params->beta_;
+	AadFloat sigma02 = params->sigma0_ * params->sigma0_;
+	AadFloat rho2 = params->rho_ * params->rho_;
+	AadFloat alpha2 = params->alpha_ * params->alpha_;
+	AadFloat i1Term1 = ((beta2 - 2 * params->beta_) * sigma02) / (24 * pow((shiftedStrike + shiftedForward) / 2, 2 * (1 - params->beta_)));
+	AadFloat i1Term2 = (params->rho_ * params->alpha_ * params->beta_ * params->sigma0_) / (4 * pow((shiftedStrike + shiftedForward) / 2, 1 - params->beta_));
+	AadFloat i1Term3 = ((2 - 3 * rho2) * alpha2) / 24;
+	AadFloat i1 = i1Term1 + i1Term2 + i1Term3;
 	return i0 * (1 + i1 * params->timeToExpiry_);
 
 }
@@ -287,10 +351,10 @@ void TestShiftedSabr() {
 	std::ofstream myFile;
 	myFile.open("shifted_sabr_smile.csv");
 	for (size_t i = 0; i < nStrikes; i++) {
-		t.nodes_ = reinterpret_cast<float_tape_node *>(malloc(maxTapeSize * sizeof(float_tape_node)));
-		t.node_index_ = 0;
+		t.nodes_ = reinterpret_cast<float.tapenode *>(malloc(maxTapeSize * sizeof(float.tapenode)));
+		t.node.index = 0;
 		t.nNodes_ = maxTapeSize;
-		aad_float_shifted_sabr_params params;
+		AadFloat_shifted_sabr_params params;
 		params.forward_ = AddFloatToTape(2.5e-2, &t);
 		params.timeToExpiry_ = AddFloatToTape(10, &t);
 		params.alpha_ = AddFloatToTape(0.28, &t);
@@ -298,9 +362,9 @@ void TestShiftedSabr() {
 		params.rho_ = AddFloatToTape(0.05, &t);
 		params.zeta_ = AddFloatToTape(0.03, &t);
 		params.sigma0_ = AddFloatToTape(0.019, &t);
-		aad_float thisStrike = AddFloatToTape(strikeStart + i * strikeStep, &t);
-		aad_float impliedVol = AadFloatShiftedSabr(thisStrike, &params);
-		myFile << thisStrike.value_ << "," << impliedVol.value_ << "\n";
+		AadFloat thisStrike = AddFloatToTape(strikeStart + i * strikeStep, &t);
+		AadFloat impliedVol = AadFloatShiftedSabr(thisStrike, &params);
+		myFile << thisStrike.value << "," << impliedVol.value << "\n";
 		free(t.nodes_);
 	}
 	myFile.close();
