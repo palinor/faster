@@ -124,7 +124,7 @@ benchmark_results TestRandom(
 	int nTrials, 
 	const size_t kernelWidth, 
 	const size_t kernelHeight,
-	thread_pool *pool
+	ThreadPool *pool
 )
 {
 	matrix_f32 a = RandomMatrixf32(size_i, size_k);
@@ -174,7 +174,7 @@ benchmark_results TestOnes(
 	int nTrials, 
 	const size_t kernelWidth, 
 	const size_t kernelHeight,
-	thread_pool *pool
+	ThreadPool *pool
 )
 {
 	benchmark_results averageResult;
@@ -222,7 +222,7 @@ int MatrixBenchmarksMain(
 	int nTrials, 
 	const size_t kernelWidth, 
 	const size_t kernelHeight,
-	thread_pool *pool
+	ThreadPool *pool
 )
 {
 	//printf("Testing Naive multiply on random matrices\n");
@@ -245,7 +245,7 @@ int main() {
 	const int nTrials = 1000;
 	const size_t kernelWidth = 4;
 	const size_t kernelHeight = 16;
-	thread_pool pool;
+	ThreadPool pool;
 	size_t nStartingTasks = 256;
 	size_t nThreads = 14;
 	InitThreadPool(&pool, nStartingTasks, nThreads);

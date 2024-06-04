@@ -9,7 +9,7 @@ libraryName='analytics.so'
 frameworksDir="/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/"
 
 if [ $debugMode -gt 0]; then
-optionList=('-std=c++20')
+optionList=('-std=gnu++20')
 optionList+='-fcolor-diagnostics'
 optionList+='-fansi-escape-codes'
 optionList+='-Wall'
@@ -25,11 +25,12 @@ optionList+='-Ofast'
 optionList+='-std=gnu++20'
 fi
 
-baseFiles=('linalg')
-baseFiles+='matrix'
-baseFiles+='basic_math'
-baseFiles+='threadpool'
-baseFiles+='matrix_benchmarks'
+#baseFiles=('linalg')
+#baseFiles+='matrix'
+baseFiles+=('basic_math')
+baseFiles+='threadpool_better'
+#baseFiles+='matrix_benchmarks'
+baseFiles+='tests'
 
 imguiDir='imgui/'
 imguiBaseFiles=('imgui')
@@ -51,6 +52,7 @@ imguiOptions+='-framework'
 imguiOptions+='OpenGL'
 imguiOptions+='-framework'
 imguiOptions+='GLUT'
+imguiOptions+='-L/Users/aionfeehan/opt/anaconda3/lib/'
 
 buildFiles=()
 for file in ${baseFiles[@]}

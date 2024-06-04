@@ -9,7 +9,7 @@
 #include <cstdlib>
 
 #include <math.h>
-#include "threadpool.h"
+#include "threadpool_better.h"
 
 #define MAX_FLOAT 1e20
 #define MIN_FLOAT 1e-12
@@ -625,7 +625,7 @@ int microkernel(Matrixf32 *result_matrix, const Matrixf32 *a, const Matrixf32 *b
 	{
 		for (size_t i = 0; i < kernel_height; i++)
 		{
-			float32x4_t a_elems_i = vld1q_f32(matrixf32GetAddr(a, result_row + i, SIMD_VECTOR_SIZE * k));
+			float32x4_t a_element_i = vld1q_f32(matrixf32GetAddr(a, result_row + i, SIMD_VECTOR_SIZE * k));
 			for (size_t j = 0; j < kernel_width; j++)
 			{
 				float32x4_t b_element_i0 = vld1q_f32(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k, result_col + SIMD_VECTOR_SIZE * j));
@@ -669,6 +669,7 @@ int microkernel(Matrixf32 *result_matrix, const Matrixf32 *a, const Matrixf32 *b
 			vst1q_f32(result_location + i * b->cols + j * SIMD_VECTOR_SIZE, result_elements[i * kernel_width + j]);
 		}
 	}
+	return 0;
 }
 
 /*
@@ -919,7 +920,7 @@ void matrixMicrokernelRowTask(void *microkernel_task_infoInput) {
 	Matrixf32 *result_matrix = microkernel_task_info->result_matrix;
 	size_t number_of_columns = microkernel_task_info->right_matrix->cols / (kernel_width * SIMD_VECTOR_SIZE);
 	for (size_t col = 0; col < number_of_columns; col++) {
-		matrixf32MicrokernelApply(result_matrix, a, b, row * kernel_height, col * kernel_width * SIMD_VECTOR_SIZE, kernel_width, kernel_height);
+		microkernel(result_matrix, a, b, row * kernel_height, col * kernel_width * SIMD_VECTOR_SIZE, kernel_width, kernel_height);
 	}
 	free(microkernel_task_infoInput);
 }

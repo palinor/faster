@@ -3,6 +3,7 @@
 #include "basic_math.h"
 #include "linalg.h"
 #include "matrix_benchmarks.h"
+#include "date.cpp"
 
 int LogErrorExact(float expectedOutput, float output, float *inputs, size_t nInputs)
 {
@@ -95,6 +96,7 @@ void TestSwap() {
 	printf("a: %f, b: %f", a, b);
 }
 
+/*
 int TestGaussJordan() {
 	printf("Testing GaussJordan \n");
 	int nErrors = 0;
@@ -242,8 +244,18 @@ int TestLUFactorize() {
 		}
 	return nErrors;
 }
+*/
+
+int TestCalendar() {
+	Date start_date = {1, JANUARY, 2024};
+	Date end_date = {2, JANUARY, 2024};
+	printf("1 Jan 2024 - 2 Jan 2024, Calendar = None: %i", CoverageDays(&start_date, &end_date, Calendar::NONE));		
+	printf("1 Jan 2024 - 2 Jan 2024, Calendar = Weekday: %i", CoverageDays(&start_date, &end_date, Calendar::WEEKDAYS));		
+	printf("1 Jan 2024 - 2 Jan 2024, Calendar = SIFMA: %i", CoverageDays(&start_date, &end_date, Calendar::SIFMA));		
+}
 
 #ifdef IS_MAIN
+/*
 int main()
 {
 	const char fsqrtName[6] = "FSqrt";
@@ -258,6 +270,8 @@ int main()
 	RunTestFunction(TestLUFactorize, LUFactorizeName);
 	// RunTestFunction(TestLU, "LUFactorize + LUBackSub");
 	return 0;
+} */
+int main() {
+	TestCalendar();
 }
 #endif
-

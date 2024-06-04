@@ -56,5 +56,5 @@ void Matrixf32MicrokernelMultiply(
 	const matrix_f32 *b, 
 	const size_t kernelWidth, 
 	const size_t kernelHeight,
-	thread_pool *pool = nullptr
+	ThreadPool *pool = nullptr
 );

@@ -1,4 +1,4 @@
-#include "threadpool.h"
+#include "threadpool_better.h"
 // This should all be doable without going through futures and promises
 // How much of the cpp features can I remove from my multithreading and still have it work?
 

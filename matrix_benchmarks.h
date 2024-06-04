@@ -35,7 +35,7 @@ benchmark_results TestRandom(
 	int nTrials, 
 	const size_t kernelWidth, 
 	const size_t kernelHeight,
-	thread_pool *pool
+	ThreadPool *pool
 );
 benchmark_results TestOnes(
 	size_t size_i, 
@@ -44,7 +44,7 @@ benchmark_results TestOnes(
 	int nTrials, 
 	const size_t kernelWidth, 
 	const size_t kernelHeight,
-	thread_pool *pool
+	ThreadPool *pool
 );
 int MatrixBenchmarksMain(
 	size_t sizeI, 
@@ -53,5 +53,5 @@ int MatrixBenchmarksMain(
 	int nTrials, 
 	const size_t kernelWidth, 
 	const size_t kernelHeight, 
-	thread_pool *pool
+	ThreadPool *pool
 );

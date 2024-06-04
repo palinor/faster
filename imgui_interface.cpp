@@ -1,20 +1,24 @@
 #include <math.h>
 #include <stdio.h>
-#include "imgui.h"
-#include "imgui_impl_win32.h"
-#include "imgui_impl_dx12.h"
+#ifdef __APPLE__
+#include "imgui/backends/imgui_impl_metal.h"
+#include "implot/implot.h"
+#include "imgui/examples/example_apple_metal/options.h"
+#include "imgui/examples/example_apple_metal/yield_curve.h"
+#else
+#include "imgui_impl_win32.cpp"
+#include "imgui_impl_dx12.cpp"
 #include "imgui_draw.cpp"
 #include "imgui_tables.cpp"
 #include "imgui_widgets.cpp"
 #include "imgui.cpp"
-#include "imgui_impl_win32.cpp"
-#include "imgui_impl_dx12.cpp"
-#include "imgui_demo.cpp"
-
 #include "implot_items.cpp"
 #include "implot.cpp"
+#include "imgui_demo.cpp"
 #include "yield_curve.cpp"
 #include "options.cpp"
+#endif
+
 
 struct DisplayData {
 
