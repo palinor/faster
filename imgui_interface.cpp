@@ -6,6 +6,7 @@
 #include "imgui/examples/example_apple_metal/options.h"
 #include "imgui/examples/example_apple_metal/yield_curve.h"
 #else
+#define IMGUI_DEFINE_MATH_OPERATORS
 #include "imgui_impl_win32.cpp"
 #include "imgui_impl_dx12.cpp"
 #include "imgui_draw.cpp"
@@ -14,7 +15,6 @@
 #include "imgui.cpp"
 #include "implot_items.cpp"
 #include "implot.cpp"
-#include "imgui_demo.cpp"
 #include "yield_curve.cpp"
 #include "options.cpp"
 #endif

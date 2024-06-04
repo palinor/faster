@@ -5,9 +5,6 @@
 
 #include "imgui_interface.cpp"
 
-#define global_variable static
-#define local_persist static
-#define internal static
 
 #ifdef _DEBUG
 #define DX12_ENABLE_DEBUG_LAYER
@@ -27,23 +24,23 @@ struct FrameContext {
 	UINT64 fence_value;
 };
 
-global_variable int const NUM_FRAMES_IN_FLIGHT = 3;
-global_variable FrameContext global_frame_contexts[NUM_FRAMES_IN_FLIGHT] = {};
-global_variable UINT global_frame_index = 0;
+static int const NUM_FRAMES_IN_FLIGHT = 3;
+static FrameContext global_frame_contexts[NUM_FRAMES_IN_FLIGHT] = {};
+static UINT global_frame_index = 0;
 
-global_variable int const NUM_BACK_BUFFERS = 3;
-global_variable ID3D12Device *global_pd3d_device = nullptr;
-global_variable ID3D12DescriptorHeap *global_pd3d_rtv_descriptor_heap = nullptr;
-global_variable ID3D12DescriptorHeap *global_pd3d_srv_descriptor_heap = nullptr;
-global_variable ID3D12CommandQueue *global_pd3d_command_queue = nullptr;
-global_variable ID3D12GraphicsCommandList *global_pd3d_command_list = nullptr;
-global_variable ID3D12Fence *global_fence = nullptr;
-global_variable HANDLE global_fence_event = nullptr;
-global_variable UINT64 global_fence_last_signaled_value = 0;
-global_variable IDXGISwapChain3 *global_swapchain_pointer = nullptr;
-global_variable HANDLE global_hswapchain_waitable_object = nullptr;
-global_variable ID3D12Resource *global_main_render_target_resources[NUM_BACK_BUFFERS] = {};
-global_variable D3D12_CPU_DESCRIPTOR_HANDLE global_main_render_target_descriptor[NUM_BACK_BUFFERS] = {};
+static int const NUM_BACK_BUFFERS = 3;
+static ID3D12Device *global_pd3d_device = nullptr;
+static ID3D12DescriptorHeap *global_pd3d_rtv_descriptor_heap = nullptr;
+static ID3D12DescriptorHeap *global_pd3d_srv_descriptor_heap = nullptr;
+static ID3D12CommandQueue *global_pd3d_command_queue = nullptr;
+static ID3D12GraphicsCommandList *global_pd3d_command_list = nullptr;
+static ID3D12Fence *global_fence = nullptr;
+static HANDLE global_fence_event = nullptr;
+static UINT64 global_fence_last_signaled_value = 0;
+static IDXGISwapChain3 *global_swapchain_pointer = nullptr;
+static HANDLE global_hswapchain_waitable_object = nullptr;
+static ID3D12Resource *global_main_render_target_resources[NUM_BACK_BUFFERS] = {};
+static D3D12_CPU_DESCRIPTOR_HANDLE global_main_render_target_descriptor[NUM_BACK_BUFFERS] = {};
 
 bool CreateDeviceD3D(HWND window_handle);
 void CleanupDeviceD3D();
@@ -220,7 +217,7 @@ bool CreateDeviceD3D(HWND window_handle) {
 
 #ifdef DX12_ENABLE_DEBUG_LAYER
 	ID3D12Debug *pdx12Debug = nullptr;
-	if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&pdx12Debug)))) {
+	if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&pdx12Debug))))
 		pdx12Debug->EnableDebugLayer();
 #endif
 
@@ -228,7 +225,6 @@ bool CreateDeviceD3D(HWND window_handle) {
 		if (D3D12CreateDevice(nullptr, feature_level, IID_PPV_ARGS(&global_pd3d_device)) != S_OK) {
 			return false;
 		}
-	}
 #ifdef DX12_ENABLE_DEBUG_LAYER
 	if (pdx12Debug != nullptr)
 	{
