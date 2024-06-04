@@ -73,6 +73,7 @@ bool operator>=(Date &date_1, Date &date_2) {
 	return date_1.day >= date_2.day;
 }
 
+// note(AION) after the fuck up with pointers, maybe we don't want to combine these with operator overloading
 bool operator<(Date &date_1, Date &date_2) {
 	return date_2 > date_1;
 }
@@ -82,7 +83,7 @@ bool operator<=(Date &date_1, Date &date_2) {
 }
 
 bool operator==(Date &date_1, Date &date_2) {
-	return (date_1.year == date_2.year && date_1.month == date_2.month && date_1.day && date_2.day);
+	return (date_1.year == date_2.year && date_1.month == date_2.month && date_1.day == date_2.day);
 }
 
 
@@ -144,7 +145,7 @@ void AddCalendarDaysToDate(Date *date, uint days) {
 }
 
 int DistanceInDays(Date *left_date, Date *right_date) {
-	if (left_date < right_date) return -1 * DistanceInDays(right_date, left_date);
+	if (*left_date > *right_date) return -1 * DistanceInDays(right_date, left_date);
 	int result = 0;
 	int right_year = right_date->year;
 	int right_month = right_date->month;
@@ -165,7 +166,7 @@ int DistanceInDays(Date *left_date, Date *right_date) {
 	while (right_month < left_date->month) {
 		result += DaysInMonth(right_month++, right_year);
 	}
-	result += left_date->day - right_date->day;
+	result += right_date->day - left_date->day;
 	return result;
 }
 
@@ -199,9 +200,6 @@ DayOfTheWeek GetDayOfTheWeek(Date *date) {
 
 inline int NewYearsCount(Date *start_date, Date *end_date) {
 	if (*start_date > *end_date) {
-		return 0;
-	}
-	if (*start_date == *end_date) {
 		return 0;
 	}
 	if ((end_date->year == start_date->year) && ((start_date->month > 1) || (start_date->day > 2))) {
@@ -324,9 +322,6 @@ inline int JuneteenthCount(Date *start_date, Date *end_date) {
 	if (*start_date > *end_date) {
 		return 0;
 	}
-	if (*start_date == *end_date) {
-		return 0;
-	}
 	if ((end_date->year == start_date->year) && (start_date->month > 7)) {
 		return 0;
 	}
@@ -358,9 +353,6 @@ inline int JuneteenthCount(Date *start_date, Date *end_date) {
 
 inline int July4Count(Date *start_date, Date *end_date) {
 	if (*start_date > *end_date) {
-		return 0;
-	}
-	if (*start_date == *end_date) {
 		return 0;
 	}
 	if ((end_date->year == start_date->year) && (start_date->month > 7)) {
@@ -450,9 +442,6 @@ inline int ColumbusDayCount(Date *start_date, Date *end_date) {
 
 inline int VeteransDayCount(Date *start_date, Date *end_date) {
 	if (*start_date > *end_date) {
-		return 0;
-	}
-	if (*start_date == *end_date) {
 		return 0;
 	}
 	if ((end_date->year == start_date->year) && (start_date->month > 7)) {
