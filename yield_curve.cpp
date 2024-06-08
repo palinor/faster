@@ -47,13 +47,13 @@ struct YieldCurveOvernightForwardDouble {
 	size_t number_of_points;
 };
 
-void yieldCurveInit(void *yield_curve, YieldCurveType curve_type, Precision precision) {
+void YieldCurveInit(void *yield_curve, YieldCurveType curve_type, Precision precision) {
 	YieldCurveHeader *header = (YieldCurveHeader *)yield_curve;
 	header->curve_type = curve_type;
 	header->precision = precision;
 }
 
-int yieldCurveGetShortRate(void *output_float_or_double, void *yield_curve_input, void *maturity_in_years_float_or_double) {
+int YieldCurveGetShortRate(void *output_float_or_double, void *yield_curve_input, void *maturity_in_years_float_or_double) {
 	YieldCurveHeader *header = (YieldCurveHeader *)yield_curve_input;
 	switch (header->precision) {
 	case Precision::FLOAT: {
@@ -139,7 +139,7 @@ int yieldCurveGetShortRate(void *output_float_or_double, void *yield_curve_input
 	return 0;
 }
 
-int yieldCurveGetOvernightForward(void *output_float_or_double, void *yield_curve_input, void *maturity_in_years_float_or_double) {
+int YieldCurveGetOvernightForward(void *output_float_or_double, void *yield_curve_input, void *maturity_in_years_float_or_double) {
 	YieldCurveHeader *header = (YieldCurveHeader *)yield_curve_input;
 	switch (header->precision) {
 	case Precision::FLOAT: {
@@ -225,7 +225,7 @@ int yieldCurveGetOvernightForward(void *output_float_or_double, void *yield_curv
 	return 0;
 }
 
-int discountFactorSpotFromYieldCurve(void *discount_factor_float_or_double, void *yield_curve_input, void *time_to_maturity_in_years) {
+int DiscountFactorSpotFromYieldCurve(void *discount_factor_float_or_double, void *yield_curve_input, void *time_to_maturity_in_years) {
 	YieldCurveHeader *header = (YieldCurveHeader *)yield_curve_input;
 	switch (header->precision) {
 	case Precision::FLOAT: {
@@ -315,7 +315,7 @@ int discountFactorSpotFromYieldCurve(void *discount_factor_float_or_double, void
 	return 0;
 }
 
-int discountFactorForwardFromYieldCurve(void *discount_factor_float_or_double, void *yield_curve_input, void *time_to_start_in_years, void *time_to_end_in_years) {
+int DiscountFactorForwardFromYieldCurve(void *discount_factor_float_or_double, void *yield_curve_input, void *time_to_start_in_years, void *time_to_end_in_years) {
 	YieldCurveHeader *header = (YieldCurveHeader *)yield_curve_input;
 	switch (header->precision) {
 	case Precision::FLOAT: {
@@ -323,9 +323,9 @@ int discountFactorForwardFromYieldCurve(void *discount_factor_float_or_double, v
 		float *time_to_start = (float *)time_to_start_in_years;
 		float *time_to_end = (float *)time_to_end_in_years;
 		float discount_factor_start, discount_factor_end;
-		int error = discountFactorSpotFromYieldCurve(&discount_factor_start, yield_curve_input, time_to_start);
+		int error = DiscountFactorSpotFromYieldCurve(&discount_factor_start, yield_curve_input, time_to_start);
 		if (error) return -1;
-		error = discountFactorSpotFromYieldCurve(&discount_factor_end, yield_curve_input, time_to_end);
+		error = DiscountFactorSpotFromYieldCurve(&discount_factor_end, yield_curve_input, time_to_end);
 		if (error) return -1;
 		*output = discount_factor_end / discount_factor_start;
 		return 0;
@@ -336,9 +336,9 @@ int discountFactorForwardFromYieldCurve(void *discount_factor_float_or_double, v
 		double *time_to_end = (double *)time_to_end_in_years;
 		double discount_factor_start;
 		double discount_factor_end;
-		int error = discountFactorSpotFromYieldCurve(&discount_factor_start, yield_curve_input, time_to_start);
+		int error = DiscountFactorSpotFromYieldCurve(&discount_factor_start, yield_curve_input, time_to_start);
 		if (error) return -1;
-		error = discountFactorSpotFromYieldCurve(&discount_factor_end, yield_curve_input, time_to_end);
+		error = DiscountFactorSpotFromYieldCurve(&discount_factor_end, yield_curve_input, time_to_end);
 		if (error) return -1;
 		*output = discount_factor_end / discount_factor_start;
 		return 0;
@@ -350,7 +350,7 @@ int discountFactorForwardFromYieldCurve(void *discount_factor_float_or_double, v
 }
 
 
-int yieldCurveShortRateStripFras(void *yield_curve_input, void *forward_rates, void *expiry_times_in_years, size_t number_of_instruments) {
+int YieldCurveShortRateStripFras(void *yield_curve_input, void *forward_rates, void *expiry_times_in_years, size_t number_of_instruments) {
 	YieldCurveHeader *header = (YieldCurveHeader *)yield_curve_input;
 	header->curve_type = YieldCurveType::SHORT_RATE;
 	switch (header->precision) {
@@ -370,7 +370,9 @@ int yieldCurveShortRateStripFras(void *yield_curve_input, void *forward_rates, v
 		}
 		yield_curve->number_of_points = number_of_instruments;
 		if (!yield_curve->short_rates) yield_curve->short_rates = (float *)malloc(number_of_instruments * sizeof(float));
+		if (!yield_curve->short_rates) return -1;
 		if (!yield_curve->interpolation_times) yield_curve->interpolation_times = (float *)malloc(number_of_instruments * sizeof(float));
+		if (!yield_curve->interpolation_times) return -1;
 
 		float *this_forward_rate = (float *)forward_rates;
 		float *this_expiry_time = (float *)expiry_times_in_years;
@@ -400,7 +402,9 @@ int yieldCurveShortRateStripFras(void *yield_curve_input, void *forward_rates, v
 		}
 		yield_curve->number_of_points = number_of_instruments;
 		if (!yield_curve->short_rates) yield_curve->short_rates = (double *)malloc(number_of_instruments * sizeof(double));
+		if (!yield_curve->short_rates) return -1;
 		if (!yield_curve->interpolation_times) yield_curve->interpolation_times = (double *)malloc(number_of_instruments * sizeof(double));
+		if (!yield_curve->interpolation_times) return -1;
 
 		double *this_forward_rate = (double *)forward_rates;
 		double *this_expiry_time = (double *)expiry_times_in_years;
@@ -419,7 +423,7 @@ int yieldCurveShortRateStripFras(void *yield_curve_input, void *forward_rates, v
 	return 0;
 }
 
-int yieldCurveOvernightForwardStripFras(void *yield_curve_input, void *forward_rates, void *expiry_times_in_years, size_t number_of_instruments) {
+int YieldCurveOvernightForwardStripFras(void *yield_curve_input, void *forward_rates, void *expiry_times_in_years, size_t number_of_instruments) {
 	YieldCurveHeader *header = (YieldCurveHeader *)yield_curve_input;
 	header->curve_type = YieldCurveType::OVERNIGHT_FORWARD;
 	switch (header->precision) {
@@ -428,18 +432,18 @@ int yieldCurveOvernightForwardStripFras(void *yield_curve_input, void *forward_r
 		float first_expiry_time = 0;
 		float second_expiry_time = 0;
 		if ((yield_curve->overnight_forwards) && (yield_curve->number_of_points != number_of_instruments)) {
-			void *new_block = realloc(yield_curve->overnight_forwards, number_of_instruments * sizeof(float));
-			if (!new_block) return -1;
-			yield_curve->overnight_forwards = (float *)new_block;
+			yield_curve->overnight_forwards = (float *)realloc(yield_curve->overnight_forwards, number_of_instruments * sizeof(float));
+			if (!yield_curve->overnight_forwards) return -1;
 		}
 		if ((yield_curve->interpolation_times) && (yield_curve->number_of_points != number_of_instruments)) {
-			void *new_block = realloc(yield_curve->interpolation_times, number_of_instruments * sizeof(float));
-			if (!new_block) return -1;
-			yield_curve->interpolation_times = (float *)new_block;
+			yield_curve->interpolation_times = (float *)realloc(yield_curve->interpolation_times, number_of_instruments * sizeof(float));
+			if (!yield_curve->interpolation_times) return -1;
 		}
 		yield_curve->number_of_points = number_of_instruments;
 		if (!yield_curve->overnight_forwards) yield_curve->overnight_forwards = (float *)malloc(number_of_instruments * sizeof(float));
+		if (!yield_curve->overnight_forwards) return -1;
 		if (!yield_curve->interpolation_times) yield_curve->interpolation_times = (float *)malloc(number_of_instruments * sizeof(float));
+		if (!yield_curve->interpolation_times) return -1;
 
 		float *this_forward_rate = (float *)forward_rates;
 		float *this_expiry_time = (float *)expiry_times_in_years;
@@ -512,18 +516,20 @@ struct YieldCurveSwapD {
 	double *floating_payment_times = nullptr;
 };
 
-int yieldCurveSwapFInit(YieldCurveSwapF *swap, size_t number_of_fixed_payments, size_t number_of_floating_payments, float swap_rate) {
+int YieldCurveSwapFInit(YieldCurveSwapF *swap, size_t number_of_fixed_payments, size_t number_of_floating_payments, float swap_rate) {
 	swap->header.type = YieldCurveSwapHeader::FLOAT;
 	swap->swap_rate = swap_rate;
 	if ((swap->fixed_payment_times) && (swap->number_of_fixed_payments != number_of_fixed_payments)) {
 		swap->fixed_payment_times = (float *)realloc(swap->fixed_payment_times, number_of_fixed_payments * sizeof(float));
 	}
 	if (!swap->fixed_payment_times) swap->fixed_payment_times = (float *)malloc(number_of_fixed_payments * sizeof(float));
+	if (!swap->fixed_payment_times) return -1;
 
 	if ((swap->floating_payment_times) && (swap->number_of_floating_payments != number_of_floating_payments)) {
 		swap->floating_payment_times = (float *)realloc(swap->floating_payment_times, number_of_floating_payments * sizeof(float));
 	}
 	if (!swap->floating_payment_times) swap->floating_payment_times = (float *)malloc(number_of_floating_payments * sizeof(float));
+	if (!swap->floating_payment_times) return -1;
 	swap->number_of_fixed_payments = number_of_fixed_payments;
 	swap->number_of_floating_payments = number_of_floating_payments;
 	float *fixed_payment_time = swap->fixed_payment_times;
@@ -537,18 +543,21 @@ int yieldCurveSwapFInit(YieldCurveSwapF *swap, size_t number_of_fixed_payments, 
 	return 0;
 }
 
-int yieldCurveSwapDInit(YieldCurveSwapD *swap, size_t number_of_fixed_payments, size_t number_of_floating_payments, double swap_rate) {
+int YieldCurveSwapDInit(YieldCurveSwapD *swap, size_t number_of_fixed_payments, size_t number_of_floating_payments, double swap_rate) {
 	swap->header.type = YieldCurveSwapHeader::DOUBLE;
 	swap->swap_rate = swap_rate;
 	if ((swap->fixed_payment_times) && (swap->number_of_fixed_payments != number_of_fixed_payments)) {
 		swap->fixed_payment_times = (double *)realloc(swap->fixed_payment_times, number_of_fixed_payments * sizeof(double));
 	}
 	if (!swap->fixed_payment_times) swap->fixed_payment_times = (double *)malloc(number_of_fixed_payments * sizeof(double));
+	if (!swap->fixed_payment_times) return -1;
 
 	if ((swap->floating_payment_times) && (swap->number_of_floating_payments != number_of_floating_payments)) {
 		swap->floating_payment_times = (double *)realloc(swap->floating_payment_times, number_of_floating_payments * sizeof(double));
 	}
 	if (!swap->floating_payment_times) swap->floating_payment_times = (double *)malloc(number_of_floating_payments * sizeof(double));
+	if (!swap->floating_payment_times) return -1;
+
 	swap->number_of_fixed_payments = number_of_fixed_payments;
 	swap->number_of_floating_payments = number_of_floating_payments;
 	double *fixed_payment_time = swap->fixed_payment_times;
@@ -562,12 +571,12 @@ int yieldCurveSwapDInit(YieldCurveSwapD *swap, size_t number_of_fixed_payments, 
 	return 0;
 }
 
-inline void yieldCurveSwapFree(YieldCurveSwapF *swap) {
+inline void YieldCurveSwapFree(YieldCurveSwapF *swap) {
 	free(swap->fixed_payment_times);
 	free(swap->floating_payment_times);
 }
 
-int yieldCurveShortRateStripSwaps(void *yield_curve_input, void *swap_list, void *swap_rates, size_t number_of_swaps, size_t number_of_already_stripped_fras) {
+int YieldCurveShortRateStripSwaps(void *yield_curve_input, void *swap_list, void *swap_rates, size_t number_of_swaps, size_t number_of_already_stripped_fras) {
 	YieldCurveHeader *header = (YieldCurveHeader *)yield_curve_input;
 	switch (header->precision) {
 	case Precision::FLOAT: {
@@ -616,7 +625,7 @@ int yieldCurveShortRateStripSwaps(void *yield_curve_input, void *swap_list, void
 		float this_discount_factor = 1;
 		for (size_t i = 0; i < number_of_known_swap_discount_factors; ++i) {
 			float coverage = (*this_swap_payment_time - last_swap_payment_time);
-			int err = discountFactorSpotFromYieldCurve(&this_discount_factor, yield_curve, this_swap_payment_time);
+			int err = DiscountFactorSpotFromYieldCurve(&this_discount_factor, yield_curve, this_swap_payment_time);
 			if (err) return -1;
 			fixed_leg_sum += coverage * this_discount_factor;
 			last_swap_payment_time = *this_swap_payment_time;
@@ -685,7 +694,7 @@ int yieldCurveShortRateStripSwaps(void *yield_curve_input, void *swap_list, void
 		double this_discount_factor = 1;
 		for (size_t i = 0; i < number_of_known_swap_discount_factors; ++i) {
 			double coverage = (*this_swap_payment_time - last_swap_payment_time);
-			int err = discountFactorSpotFromYieldCurve(&this_discount_factor, yield_curve, this_swap_payment_time);
+			int err = DiscountFactorSpotFromYieldCurve(&this_discount_factor, yield_curve, this_swap_payment_time);
 			if (err) return -1;
 			fixed_leg_sum += coverage * this_discount_factor;
 			last_swap_payment_time = *this_swap_payment_time;
@@ -712,7 +721,7 @@ int yieldCurveShortRateStripSwaps(void *yield_curve_input, void *swap_list, void
 	return 0;
 }
 
-int yieldCurveOvernightForwardStripSwaps(void *yield_curve_input, void *swap_list, void *swap_rates, size_t number_of_swaps, size_t number_of_already_stripped_fras) {
+int YieldCurveOvernightForwardStripSwaps(void *yield_curve_input, void *swap_list, void *swap_rates, size_t number_of_swaps, size_t number_of_already_stripped_fras) {
 	YieldCurveHeader *header = (YieldCurveHeader *)yield_curve_input;
 	switch (header->precision) {
 	case Precision::FLOAT: {
@@ -761,7 +770,7 @@ int yieldCurveOvernightForwardStripSwaps(void *yield_curve_input, void *swap_lis
 		float this_discount_factor = 1;
 		for (size_t i = 0; i < number_of_known_swap_discount_factors; ++i) {
 			float coverage = (*this_swap_payment_time - last_swap_payment_time);
-			int err = discountFactorSpotFromYieldCurve(&this_discount_factor, yield_curve, this_swap_payment_time);
+			int err = DiscountFactorSpotFromYieldCurve(&this_discount_factor, yield_curve, this_swap_payment_time);
 			if (err) return -1;
 			fixed_leg_sum += coverage * this_discount_factor;
 			last_swap_payment_time = *this_swap_payment_time;
@@ -831,7 +840,7 @@ int yieldCurveOvernightForwardStripSwaps(void *yield_curve_input, void *swap_lis
 		double this_discount_factor = 1;
 		for (size_t i = 0; i < number_of_known_swap_discount_factors; ++i) {
 			double coverage = (*this_swap_payment_time - last_swap_payment_time);
-			int err = discountFactorSpotFromYieldCurve(&this_discount_factor, yield_curve, this_swap_payment_time);
+			int err = DiscountFactorSpotFromYieldCurve(&this_discount_factor, yield_curve, this_swap_payment_time);
 			if (err) return -1;
 			fixed_leg_sum += coverage * this_discount_factor;
 			last_swap_payment_time = *this_swap_payment_time;
@@ -859,23 +868,23 @@ int yieldCurveOvernightForwardStripSwaps(void *yield_curve_input, void *swap_lis
 	return 0;
 }
 
-float levelFromYieldCurveF(void *yield_curve, float time_to_start, float level_maturity, float frequency) {
+float LevelFromYieldCurveF(void *yield_curve, float time_to_start, float level_maturity, float frequency) {
 	float result = 0;
 	for (float discount_factor_length = 1 / frequency; discount_factor_length <= level_maturity; discount_factor_length += 1 / frequency) {
 		float df;
 		float time_to_end = time_to_start + discount_factor_length;
-		discountFactorForwardFromYieldCurve(&df, yield_curve, &time_to_start, &time_to_end);
+		DiscountFactorForwardFromYieldCurve(&df, yield_curve, &time_to_start, &time_to_end);
 		result += df / frequency;
 	}
 	return result;
 }
 
-float swapRateYieldCurveF(void *yield_curve, float time_to_start, float swap_maturity, float floating_frequency, float fixed_frequency) {
-	float level = levelFromYieldCurveF(yield_curve, time_to_start, swap_maturity, fixed_frequency);
+float SwapRateYieldCurveF(void *yield_curve, float time_to_start, float swap_maturity, float floating_frequency, float fixed_frequency) {
+	float level = LevelFromYieldCurveF(yield_curve, time_to_start, swap_maturity, fixed_frequency);
 	float df_start, df_end;
 	float time_to_end = time_to_start + swap_maturity;
-	discountFactorSpotFromYieldCurve(&df_start, yield_curve, &time_to_start);
-	discountFactorSpotFromYieldCurve(&df_end, yield_curve, &time_to_end);
+	DiscountFactorSpotFromYieldCurve(&df_start, yield_curve, &time_to_start);
+	DiscountFactorSpotFromYieldCurve(&df_end, yield_curve, &time_to_end);
 	float floating_leg_pv = df_start - df_end;
 	return floating_leg_pv / level;
 }
