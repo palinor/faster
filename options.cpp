@@ -77,15 +77,15 @@ float OptionForwardPremiumLognormalVol(float lognormal_vol, float forward, float
 
 
 float OptionForwardImpliedNormalVolBrent(float option_forward_premium, float forward, float strike, float time_to_maturity_in_years, OptionType option_type, float tolerance) {
-	float left_bracket_vol = 0;
-	float right_bracket_vol = 0.3;
+	float left_bracket_vol = 0.0f;
+	float right_bracket_vol = 0.3f;
 	float option_forward_premium_left_bracket = OptionForwardPremiumNormalVol(left_bracket_vol, forward, strike, time_to_maturity_in_years, option_type);
 	float option_forward_premium_right_bracket = OptionForwardPremiumNormalVol(right_bracket_vol, forward, strike, time_to_maturity_in_years, option_type);
 	if (option_forward_premium_left_bracket * option_forward_premium_right_bracket > 0) {
 		return -1;
 	}
-	float closest_vol = 0;
-	float closest_premium = 0;
+	float closest_vol = 0.0f;
+	float closest_premium = 0.0f;
 	float left_error = fabsf(option_forward_premium_left_bracket - option_forward_premium);
 	float right_error = fabsf(option_forward_premium_right_bracket - option_forward_premium);
 	if (left_error < right_error) {
@@ -140,38 +140,22 @@ float OptionForwardImpliedNormalVolBrent(float option_forward_premium, float for
 * Implied Normal Volatility, Peter Jackel, 2017
 */
 float OptionForwardImpliedNormalVolJackel(float premium, float forward, float strike, float time_to_maturity_in_years, OptionType option_type) {
-	// We need the option to be out of the money
-	// So if we are in the money, we convert to other option type by call put parity
-	switch (option_type) {
-	case OptionType::CALL: {
-		if (forward < strike) {
-			premium += strike - forward;
-			option_type = OptionType::PUT;
-		}
-	} break;
-	case OptionType::PUT: {
-		if (strike < forward) {
-			premium += forward - strike;
-			option_type = OptionType::CALL;
-		}
-	} break;
-	default: break;
-	}
-	float theta = option_type == OptionType::CALL ? -1 : 1;
-	float psi_star = theta * premium / (strike - forward);
-	const float psi_barrier = -0.001882039271;
-	const float one_over_sqrt_2pi = 0.3989422804;
-	float x_bar = 0;
+	float theta = option_type == OptionType::CALL ? -1.0f : 1.0f;
+	float moneyness = forward - strike > 0 ? forward - strike : 0;
+	float psi_star = -fabsf(premium - (theta * moneyness)) / fabsf(strike - forward);
+	const float psi_barrier = -0.001882039271f;
+	const float one_over_sqrt_2pi = 0.3989422804f;
+	float x_bar = 0.0f;
 	if (psi_star < psi_barrier) {
-		float g = 1 / (psi_star - 0.5);
+		float g = 1 / (psi_star - 0.5f);
 		float g_2 = g * g;
-		const float numerator_coef_1 = 0.032114372355;
-		const float numerator_coef_2 = 0.016969777977;
-		const float numerator_coef_3 = 0.002207332461;
-		const float numerator_coef_4 = 9.6066952861e-5;
-		const float denominator_coef_1 = 0.6635646938;
-		const float denominator_coef_2 = 0.14528712196;
-		const float denominator_coef_3 = 0.010472855461;
+		const float numerator_coef_1 = 0.032114372355f;
+		const float numerator_coef_2 = 0.016969777977f;
+		const float numerator_coef_3 = 2.6207332461e-3f;
+		const float numerator_coef_4 = 9.6066952861e-5f;
+		const float denominator_coef_1 = 0.6635646938f;
+		const float denominator_coef_2 = 0.14528712196f;
+		const float denominator_coef_3 = 0.010472855461f;
 		float xi_numerator = numerator_coef_1 - g_2 * (numerator_coef_2 - g_2 * (numerator_coef_3 - g_2 * numerator_coef_4));
 		float xi_denominator = 1 - g_2 * (denominator_coef_1 - g_2 * (denominator_coef_2 - denominator_coef_3 * g_2));
 		float xi = xi_numerator / xi_denominator;
@@ -179,13 +163,13 @@ float OptionForwardImpliedNormalVolJackel(float premium, float forward, float st
 	}
 	else {
 		float h = sqrtf(-logf(-psi_star));
-		const float numerator_coef_1 = 9.4883409779;
-		const float numerator_coef_2 = 9.6320903635;
-		const float numerator_coef_3 = 0.58556997323;
-		const float numerator_coef_4 = 2.1464093351;
-		const float denominator_coef_1 = 0.65174820867;
-		const float denominator_coef_2 = 1.5120247828;
-		const float denominator_coef_3 = 6.6437847132e-5;
+		const float numerator_coef_1 = 9.4883409779f;
+		const float numerator_coef_2 = 9.6320903635f;
+		const float numerator_coef_3 = 0.58556997323f;
+		const float numerator_coef_4 = 2.1464093351f;
+		const float denominator_coef_1 = 0.65174820867f;
+		const float denominator_coef_2 = 1.5120247828f;
+		const float denominator_coef_3 = 6.6437847132e-5f;
 		float x_bar_numerator = numerator_coef_1 - h * (numerator_coef_2 - h * (numerator_coef_3 + numerator_coef_4 * h));
 		float x_bar_denominator = 1 - h * (denominator_coef_1 + h * (denominator_coef_2 + denominator_coef_3 * h));
 		x_bar = x_bar_numerator / x_bar_denominator;
