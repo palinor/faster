@@ -111,7 +111,7 @@ void displayDataInit(
 	for (size_t i = 0; i < number_of_swaps; ++i) {
 		size_t number_fixed_payments = (size_t)(*(data->swap_fixed_payment_schedule + i));
 		size_t number_floating_payments = 10;
-		yieldCurveSwapFInit(data->swap_list + i, number_fixed_payments, number_floating_payments, data->swap_rates[i]);
+		YieldCurveSwapFInit(data->swap_list + i, number_fixed_payments, number_floating_payments, data->swap_rates[i]);
 	}
 
 	float *this_strike = data->strikes;
@@ -212,20 +212,20 @@ void imGuiRenderLoop(DisplayData *data) {
 		ImGui::SliderFloat(swap_rate_label, this_swap_rate, -0.02, 0.2);
 		data->swap_list[swap_idx].swap_rate = *(data->swap_rates + swap_idx);
 		minimal_swap_maturity = data->swap_fixed_payment_schedule[swap_idx];
-		yieldCurveSwapFInit(data->swap_list + swap_idx, number_fixed_payments, 10, *this_swap_rate++);
+		YieldCurveSwapFInit(data->swap_list + swap_idx, number_fixed_payments, 10, *this_swap_rate++);
 		++this_swap_maturity;
 	}
 
 	switch (data->curve_type) {
 	case DisplayData::SHORT_RATE: {
 		YieldCurveShortRateFloat *yield_curve = (YieldCurveShortRateFloat *)data->yield_curve;
-		yieldCurveShortRateStripFras(
+		YieldCurveShortRateStripFras(
 			data->yield_curve,
 			data->forward_rates,
 			data->fra_times_to_maturity,
 			data->number_of_fras
 		);
-		yieldCurveShortRateStripSwaps(
+		YieldCurveShortRateStripSwaps(
 			data->yield_curve,
 			data->swap_list,
 			data->swap_rates,
@@ -255,13 +255,13 @@ void imGuiRenderLoop(DisplayData *data) {
 	} break;
 	case DisplayData::OVERNIGHT_FORWARD: {
 		YieldCurveOvernightForwardFloat *yield_curve = (YieldCurveOvernightForwardFloat *)data->yield_curve;
-		yieldCurveOvernightForwardStripFras(
+		YieldCurveOvernightForwardStripFras(
 			yield_curve,
 			data->forward_rates,
 			data->fra_times_to_maturity,
 			data->number_of_fras
 		);
-		yieldCurveOvernightForwardStripSwaps(
+		YieldCurveOvernightForwardStripSwaps(
 			yield_curve,
 			data->swap_list,
 			data->swap_rates,
@@ -323,8 +323,8 @@ void imGuiRenderLoop(DisplayData *data) {
 	float *this_cms_value = data->cms_values;
 	for (size_t i = 0; i < data->number_of_cms; ++i) {
 		float df;
-		discountFactorSpotFromYieldCurve(&df, data->yield_curve, this_time_to_maturity);
-		float forward = swapRateYieldCurveF(data->yield_curve, *this_time_to_maturity, data->cms_maturity, 1, 1);
+		DiscountFactorSpotFromYieldCurve(&df, data->yield_curve, this_time_to_maturity);
+		float forward = SwapRateYieldCurveF(data->yield_curve, *this_time_to_maturity, data->cms_maturity, 1, 1);
 		float *this_smile = data->normal_vols + data->number_of_strikes * i;
 		float *this_strike = data->strikes;
 		for (size_t k = 0; k < data->number_of_strikes; ++k) {
