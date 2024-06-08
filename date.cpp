@@ -122,8 +122,8 @@ void IncrementWeek(Date *date) {
 	}
 }
 
-void AddCalendarDaysToDate(Date *date, uint days) {
-	uint days_left_to_add = days;
+void AddCalendarDaysToDate(Date *date, int days) {
+	int days_left_to_add = days;
 	while (days_left_to_add > 366) {
 		bool will_cross_leap_year = date->month > FEBRUARY ? IsLeapYear(date->year + 1) : IsLeapYear(date->year);
 		++date->year;
@@ -147,26 +147,26 @@ void AddCalendarDaysToDate(Date *date, uint days) {
 int DistanceInDays(Date *left_date, Date *right_date) {
 	if (*left_date > *right_date) return -1 * DistanceInDays(right_date, left_date);
 	int result = 0;
-	int right_year = right_date->year;
-	int right_month = right_date->month;
-	int right_day = right_date->day;
-	if (right_year < left_date->year) {
-		result += DaysInMonth(right_month, right_year) - right_day;
-		right_day = 1;
-		++right_month;
-		while (right_month < 12) {
-			result += DaysInMonth(right_month++, right_year);
+	uint left_year = left_date->year;
+	uchar left_month = left_date->month;
+	uchar left_day = left_date->day;
+	if (left_year < right_date->year) {
+		result += DaysInMonth(left_month, left_year) - left_day;
+		left_day = 1;
+		++left_month;
+		while (left_month < 12) {
+			result += DaysInMonth(left_month++, left_year);
 		}
-		right_month = 1;
-		++right_year;
+		left_month = 1;
+		++left_year;
 	}
-	while (right_year < left_date->year) {
-		result += IsLeapYear(right_year++) ? 366 : 365;
+	while (left_year < right_date->year) {
+		result += IsLeapYear(left_year++) ? 366 : 365;
 	}
-	while (right_month < left_date->month) {
-		result += DaysInMonth(right_month++, right_year);
+	while (left_month < right_date->month) {
+		result += DaysInMonth(left_month++, left_year);
 	}
-	result += right_date->day - left_date->day;
+	result += right_date->day - left_day;
 	return result;
 }
 
@@ -534,9 +534,9 @@ inline int ChristmasDayCount(Date *start_date, Date *end_date) {
 	return result;
 }
 
-int CoverageDays(Date *start_date, Date *end_date, Calendar calendar) {
+int CalendarDays(Date *start_date, Date *end_date, Calendar calendar) {
 	if (*end_date < *start_date) {
-		return -1 * CoverageDays(end_date, start_date, calendar);
+		return -1 * CalendarDays(end_date, start_date, calendar);
 	}
 	switch (calendar) {
 	case Calendar::NONE: {
@@ -566,4 +566,24 @@ int CoverageDays(Date *start_date, Date *end_date, Calendar calendar) {
 	}
 }
 
+inline float CoverageAct365(Date *start_date, Date *end_date) {
+	return ((float)DistanceInDays(start_date, end_date)) / 365.0f;
+}
 
+inline float CoverageAct360(Date *start_date, Date *end_date) {
+	return ((float)DistanceInDays(start_date, end_date)) / 360.0f;
+}
+
+inline float Coverage30360(Date *start_date, Date *end_date) {
+	int number_of_years = end_date->year - start_date->year;
+	int number_of_months = end_date->month - start_date->month;
+	// we just assume that the day will line up if we are using coverages where months are all 30 days 
+	return (float)number_of_years + (float)number_of_months * 30.0f / 360.0f;
+}
+
+inline float Coverage30365(Date *start_date, Date *end_date) {
+	int number_of_years = end_date->year - start_date->year;
+	int number_of_months = end_date->month - start_date->month;
+	// we just assume that the day will line up if we are using coverages where months are all 30 days 
+	return (float)number_of_years + (float)number_of_months * 30.0f / 365.0f;
+}
