@@ -1,4 +1,5 @@
 #pragma once
+#include <condition_variable>
 #include <mutex>
 #include <thread>
 #include "platform_build.h"
@@ -14,6 +15,7 @@ struct TaskInfoWrapper {
 
 struct ConcurrentTaskQueue {
 	TaskInfoWrapper *tasks;
+	bool *task_is_done;
 	size_t volatile starting_max_size;
 	size_t volatile max_size;
 	size_t volatile current_size;

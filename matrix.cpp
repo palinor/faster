@@ -9,7 +9,7 @@
 #include <cstdlib>
 
 #include <math.h>
-#include "threadpool_better.h"
+#include "threadpool.cpp"
 
 #define MAX_FLOAT 1e20
 #define MIN_FLOAT 1e-12
@@ -736,35 +736,35 @@ void matrixf32MicrokernelApply(Matrixf32 *result_matrix, const Matrixf32 *a, con
 			for (size_t j = 0; j < kernel_width; j++)
 			{
 				//todo(AION): we have 3 fma ports, why can't we use 3 accumulators? It seemed needlessly slow when I tried 2
-				__m256 b_elements_0j = _mm256_load_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 b_elements_0j = _mm256_loadu_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k, result_column + SIMD_VECTOR_SIZE * j));
 				__m256 a_element_broadcast_i0 = _mm256_set1_ps(*aElems_i);
 				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(a_element_broadcast_i0, b_elements_0j, result_elements[i * kernel_width + j]);
 
-				__m256 b_elements_1j = _mm256_load_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 1, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 b_elements_1j = _mm256_loadu_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 1, result_column + SIMD_VECTOR_SIZE * j));
 				__m256 a_element_broadcast_i1 = _mm256_set1_ps(*(aElems_i + 1));
 				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(a_element_broadcast_i1, b_elements_1j, result_elements[i * kernel_width + j]);
 
-				__m256 b_elements_2j = _mm256_load_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 2, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 b_elements_2j = _mm256_loadu_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 2, result_column + SIMD_VECTOR_SIZE * j));
 				__m256 a_element_broadcast_i2 = _mm256_set1_ps(*(aElems_i + 2));
 				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(a_element_broadcast_i2, b_elements_2j, result_elements[i * kernel_width + j]);
 
-				__m256 b_elements_3j = _mm256_load_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 3, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 b_elements_3j = _mm256_loadu_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 3, result_column + SIMD_VECTOR_SIZE * j));
 				__m256 a_element_broadcast_i3 = _mm256_set1_ps(*(aElems_i + 3));
 				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(a_element_broadcast_i3, b_elements_3j, result_elements[i * kernel_width + j]);
 
-				__m256 b_elements_4j = _mm256_load_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 4, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 b_elements_4j = _mm256_loadu_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 4, result_column + SIMD_VECTOR_SIZE * j));
 				__m256 a_element_broadcast_i4 = _mm256_set1_ps(*(aElems_i + 4));
 				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(a_element_broadcast_i4, b_elements_4j, result_elements[i * kernel_width + j]);
 
-				__m256 b_elements_5j = _mm256_load_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 5, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 b_elements_5j = _mm256_loadu_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 5, result_column + SIMD_VECTOR_SIZE * j));
 				__m256 a_element_broadcast_i5 = _mm256_set1_ps(*(aElems_i + 5));
 				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(a_element_broadcast_i5, b_elements_5j, result_elements[i * kernel_width + j]);
 
-				__m256 b_elements_6j = _mm256_load_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 6, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 b_elements_6j = _mm256_loadu_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 6, result_column + SIMD_VECTOR_SIZE * j));
 				__m256 a_element_broadcast_i6 = _mm256_set1_ps(*(aElems_i + 6));
 				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(a_element_broadcast_i6, b_elements_6j, result_elements[i * kernel_width + j]);
 
-				__m256 b_elements_7j = _mm256_load_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 7, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 b_elements_7j = _mm256_loadu_ps(matrixf32GetAddr(b, SIMD_VECTOR_SIZE * k + 7, result_column + SIMD_VECTOR_SIZE * j));
 				__m256 a_element_broadcast_i7 = _mm256_set1_ps(*(aElems_i + 7));
 				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(a_element_broadcast_i7, b_elements_7j, result_elements[i * kernel_width + j]);
 			}
@@ -778,42 +778,42 @@ void matrixf32MicrokernelApply(Matrixf32 *result_matrix, const Matrixf32 *a, con
 			float *a_remainder_element_i = matrixf32GetAddr(a, result_row + i, a->cols - remainder);
 			for (size_t j = 0; j < kernel_width; j++)
 			{
-				__m256 b_remainder_element_0j = _mm256_load_ps(matrixf32GetAddr(b, a->cols - remainder, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 b_remainder_element_0j = _mm256_loadu_ps(matrixf32GetAddr(b, a->cols - remainder, result_column + SIMD_VECTOR_SIZE * j));
 				__m256 aRemainderElems_i0 = _mm256_set1_ps(*a_remainder_element_i);
 				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i0, b_remainder_element_0j, result_elements[i * kernel_width + j]);
 				if (remainder > 1)
 				{
-					__m256 b_remainder_element_1j = _mm256_load_ps(matrixf32GetAddr(b, a->cols - remainder + 1, result_column + SIMD_VECTOR_SIZE * j));
+					__m256 b_remainder_element_1j = _mm256_loadu_ps(matrixf32GetAddr(b, a->cols - remainder + 1, result_column + SIMD_VECTOR_SIZE * j));
 					__m256 aRemainderElems_i1 = _mm256_set1_ps(*(a_remainder_element_i + 1));
 					result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i1, b_remainder_element_1j, result_elements[i * kernel_width + j]);
 				}
 				if (remainder > 2)
 				{
-					__m256 b_remainder_element_2j = _mm256_load_ps(matrixf32GetAddr(b, a->cols - remainder + 2, result_column + SIMD_VECTOR_SIZE * j));
+					__m256 b_remainder_element_2j = _mm256_loadu_ps(matrixf32GetAddr(b, a->cols - remainder + 2, result_column + SIMD_VECTOR_SIZE * j));
 					__m256 aRemainderElems_i2 = _mm256_set1_ps(*(a_remainder_element_i + 2));
 					result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i2, b_remainder_element_2j, result_elements[i * kernel_width + j]);
 				}
 				if (remainder > 3)
 				{
-					__m256 b_remainder_element_3j = _mm256_load_ps(matrixf32GetAddr(b, a->cols - remainder + 3, result_column + SIMD_VECTOR_SIZE * j));
+					__m256 b_remainder_element_3j = _mm256_loadu_ps(matrixf32GetAddr(b, a->cols - remainder + 3, result_column + SIMD_VECTOR_SIZE * j));
 					__m256 aRemainderElems_i3 = _mm256_set1_ps(*(a_remainder_element_i + 3));
 					result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i3, b_remainder_element_3j, result_elements[i * kernel_width + j]);
 				}
 				if (remainder > 4)
 				{
-					__m256 b_remainder_element_4j = _mm256_load_ps(matrixf32GetAddr(b, a->cols - remainder + 4, result_column + SIMD_VECTOR_SIZE * j));
+					__m256 b_remainder_element_4j = _mm256_loadu_ps(matrixf32GetAddr(b, a->cols - remainder + 4, result_column + SIMD_VECTOR_SIZE * j));
 					__m256 aRemainderElems_i4 = _mm256_set1_ps(*(a_remainder_element_i + 4));
 					result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i4, b_remainder_element_4j, result_elements[i * kernel_width + j]);
 				}
 				if (remainder > 5)
 				{
-					__m256 b_remainder_element_5j = _mm256_load_ps(matrixf32GetAddr(b, a->cols - remainder + 5, result_column + SIMD_VECTOR_SIZE * j));
+					__m256 b_remainder_element_5j = _mm256_loadu_ps(matrixf32GetAddr(b, a->cols - remainder + 5, result_column + SIMD_VECTOR_SIZE * j));
 					__m256 aRemainderElems_i5 = _mm256_set1_ps(*(a_remainder_element_i + 5));
 					result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i5, b_remainder_element_5j, result_elements[i * kernel_width + j]);
 				}
 				if (remainder > 6)
 				{
-					__m256 b_remainder_element_6j = _mm256_load_ps(matrixf32GetAddr(b, a->cols - remainder + 6, result_column + SIMD_VECTOR_SIZE * j));
+					__m256 b_remainder_element_6j = _mm256_loadu_ps(matrixf32GetAddr(b, a->cols - remainder + 6, result_column + SIMD_VECTOR_SIZE * j));
 					__m256 aRemainderElems_i6 = _mm256_set1_ps(*(a_remainder_element_i + 6));
 					result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i6, b_remainder_element_6j, result_elements[i * kernel_width + j]);
 				}
@@ -825,7 +825,7 @@ void matrixf32MicrokernelApply(Matrixf32 *result_matrix, const Matrixf32 *a, con
 	{
 		for (size_t j = 0; j < kernel_width; j++)
 		{
-			_mm256_store_ps(result_location + i * b->cols + j * SIMD_VECTOR_SIZE, result_elements[i * kernel_width + j]);
+			_mm256_storeu_ps(result_location + i * b->cols + j * SIMD_VECTOR_SIZE, result_elements[i * kernel_width + j]);
 		}
 	}
 
@@ -841,7 +841,7 @@ void MicrokernelRemainder(const Matrixf32 *a, const Matrixf32 *b, float *result_
 	{
 		for (size_t j = 0; j < kernel_width; j++)
 		{
-			result_elements[i * kernel_width + j] = _mm256_load_ps(0);
+			result_elements[i * kernel_width + j] = _mm256_loadu_ps(0);
 		}
 	}
 	for (size_t i = 0; i < kernel_height; i++)
@@ -849,42 +849,42 @@ void MicrokernelRemainder(const Matrixf32 *a, const Matrixf32 *b, float *result_
 		float *a_remainder_element_i = matrixGetAddr(a, result_row + i, a->cols - remainder);
 		for (size_t j = 0; j < kernel_width; j++)
 		{
-			__m256 b_remainder_element_0j = _mm256_load_ps(matrixGetAddr(b, a->cols - remainder, result_column + SIMD_VECTOR_SIZE * j));
+			__m256 b_remainder_element_0j = _mm256_loadu_ps(matrixGetAddr(b, a->cols - remainder, result_column + SIMD_VECTOR_SIZE * j));
 			__m256 aRemainderElems_i0 = _mm256_set1_ps(*a_remainder_element_i);
 			result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i0, b_remainder_element_0j, result_elements[i * kernel_width + j]);
 			if (remainder > 1)
 			{
-				__m256 b_remainder_element_1j = _mm256_load_ps(matrixGetAddr(b, a->cols - remainder + 1, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 b_remainder_element_1j = _mm256_loadu_ps(matrixGetAddr(b, a->cols - remainder + 1, result_column + SIMD_VECTOR_SIZE * j));
 				__m256 aRemainderElems_i1 = _mm256_set1_ps(*(a_remainder_element_i + 1));
 				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i1, b_remainder_element_1j, result_elements[i * kernel_width + j]);
 			}
 			if (remainder > 2)
 			{
-				__m256 b_remainder_element_2j = _mm256_load_ps(matrixGetAddr(b, a->cols - remainder + 2, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 b_remainder_element_2j = _mm256_loadu_ps(matrixGetAddr(b, a->cols - remainder + 2, result_column + SIMD_VECTOR_SIZE * j));
 				__m256 aRemainderElems_i2 = _mm256_set1_ps(*(a_remainder_element_i + 2));
 				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i2, b_remainder_element_2j, result_elements[i * kernel_width + j]);
 			}
 			if (remainder > 3)
 			{
-				__m256 b_remainder_element_3j = _mm256_load_ps(matrixGetAddr(b, a->cols - remainder + 3, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 b_remainder_element_3j = _mm256_loadu_ps(matrixGetAddr(b, a->cols - remainder + 3, result_column + SIMD_VECTOR_SIZE * j));
 				__m256 aRemainderElems_i3 = _mm256_set1_ps(*(a_remainder_element_i + 3));
 				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i3, b_remainder_element_3j, result_elements[i * kernel_width + j]);
 			}
 			if (remainder > 4)
 			{
-				__m256 b_remainder_element_4j = _mm256_load_ps(matrixGetAddr(b, a->cols - remainder + 4, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 b_remainder_element_4j = _mm256_loadu_ps(matrixGetAddr(b, a->cols - remainder + 4, result_column + SIMD_VECTOR_SIZE * j));
 				__m256 aRemainderElems_i4 = _mm256_set1_ps(*(a_remainder_element_i + 4));
 				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i4, b_remainder_element_4j, result_elements[i * kernel_width + j]);
 			}
 			if (remainder > 5)
 			{
-				__m256 b_remainder_element_5j = _mm256_load_ps(matrixGetAddr(b, a->cols - remainder + 5, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 b_remainder_element_5j = _mm256_loadu_ps(matrixGetAddr(b, a->cols - remainder + 5, result_column + SIMD_VECTOR_SIZE * j));
 				__m256 aRemainderElems_i5 = _mm256_set1_ps(*(a_remainder_element_i + 5));
 				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i5, b_remainder_element_5j, result_elements[i * kernel_width + j]);
 			}
 			if (remainder > 6)
 			{
-				__m256 b_remainder_element_6j = _mm256_load_ps(matrixGetAddr(b, a->cols - remainder + 6, result_column + SIMD_VECTOR_SIZE * j));
+				__m256 b_remainder_element_6j = _mm256_loadu_ps(matrixGetAddr(b, a->cols - remainder + 6, result_column + SIMD_VECTOR_SIZE * j));
 				__m256 aRemainderElems_i6 = _mm256_set1_ps(*(a_remainder_element_i + 6));
 				result_elements[i * kernel_width + j] = _mm256_fmadd_ps(aRemainderElems_i6, b_remainder_element_6j, result_elements[i * kernel_width + j]);
 			}
@@ -901,12 +901,14 @@ void MicrokernelRemainder(const Matrixf32 *a, const Matrixf32 *b, float *result_
 #endif
 
 struct Matrixf32MicrokernelTaskInfo {
+	const ConcurrentTaskQueue *queue;
 	const Matrixf32 *left_matrix;
 	const Matrixf32 *right_matrix;
 	Matrixf32 *result_matrix;
 	size_t result_row_number;
 	size_t kernel_width;
 	size_t kernel_height;
+	size_t task_number;
 };
 
 
@@ -920,14 +922,16 @@ void matrixMicrokernelRowTask(void *microkernel_task_infoInput) {
 	Matrixf32 *result_matrix = microkernel_task_info->result_matrix;
 	size_t number_of_columns = microkernel_task_info->right_matrix->cols / (kernel_width * SIMD_VECTOR_SIZE);
 	for (size_t col = 0; col < number_of_columns; col++) {
-		microkernel(result_matrix, a, b, row * kernel_height, col * kernel_width * SIMD_VECTOR_SIZE, kernel_width, kernel_height);
+		matrixf32MicrokernelApply(result_matrix, a, b, row * kernel_height, col * kernel_width * SIMD_VECTOR_SIZE, kernel_width, kernel_height);
 	}
-	free(microkernel_task_infoInput);
+	if (microkernel_task_info->queue){
+		microkernel_task_info->queue->task_is_done[microkernel_task_info->task_number] = true;
+	}
 }
 
 
 
-void matrixf32MicrokernelMultiply(
+void Matrixf32MicrokernelMultiply(
 	Matrixf32 *result,
 	const Matrixf32 *a,
 	const Matrixf32 *b,
@@ -944,65 +948,84 @@ void matrixf32MicrokernelMultiply(
 	const size_t remaining_rows_after_microkernel = a->rows % kernel_height;
 	const size_t number_of_columns = b->cols / (kernel_width * SIMD_VECTOR_SIZE);
 	bool skip_main_block = number_of_columns == 0; // if we don't have enough columns, skip the vectorized block
-	// const size_t colRemainder = a->cols % SIMD_VECTOR_SIZE;
-	// task_handle *futures = (task_handle *)malloc(sizeof(task_handle) * number_of_rows);
+	//TaskHandle *futures = (TaskHandle *)malloc(sizeof(TaskHandle) * number_of_rows);
 	// Do the main block
 	if (!skip_main_block) {
+		Matrixf32MicrokernelTaskInfo *microkernel_task_info_list = (Matrixf32MicrokernelTaskInfo *)malloc(sizeof(Matrixf32MicrokernelTaskInfo) * number_of_rows);
+		Matrixf32MicrokernelTaskInfo *this_task_info = microkernel_task_info_list;
+		size_t task_number = 0;
 		for (size_t row = 0; row < number_of_rows; row++) {
 			// Each row defines a task. These are then run in parallel if there is a thread pool
 			// otherwise they are run sequentially 
 			/*
 			auto rowTask = [=, &result]() {
 				for (size_t col = 0; col < number_of_columns; col++) {
-					float *result_location = matrixGetAddr(&result, row * kernel_height, col * kernel_width * SIMD_VECTOR_SIZE);
-					Microkernel(a, b, result_location, row * kernel_height, col * kernel_width * SIMD_VECTOR_SIZE, kernel_width, kernel_height);
-					if (colRemainder) {
-						MicrokernelRemainder(a, b, result_location, row * kernel_height, col * kernel_width * SIMD_VECTOR_SIZE, kernel_width, kernel_height);
-					}
+					matrixf32MicrokernelApply(result, a, b, row * kernel_height, col * kernel_width * SIMD_VECTOR_SIZE, kernel_width, kernel_height);
 				}
 				return true;
-			}; */
-			Matrixf32MicrokernelTaskInfo *microkernel_task_info = (Matrixf32MicrokernelTaskInfo *)malloc(sizeof(Matrixf32MicrokernelTaskInfo));
-			microkernel_task_info->kernel_width = kernel_width;
-			microkernel_task_info->kernel_height = kernel_height;
-			microkernel_task_info->left_matrix = a;
-			microkernel_task_info->right_matrix = b;
-			microkernel_task_info->result_row_number = row;
-			microkernel_task_info->result_matrix = result;
+			};
+			*/
+			if (pool) {
+				this_task_info->queue = &(pool->task_queue);
+			}
+			else {
+				this_task_info->queue = nullptr;
+			}
+			this_task_info->kernel_width = kernel_width;
+			this_task_info->kernel_height = kernel_height;
+			this_task_info->left_matrix = a;
+			this_task_info->right_matrix = b;
+			this_task_info->result_row_number = row;
+			this_task_info->result_matrix = result;
+			this_task_info->task_number = task_number++;
 
 
 			if (pool) {
-				concurrentTaskQueuePush(microkernel_task_info, &matrixMicrokernelRowTask, &(pool->task_queue));
-				// task_handle rowFuture = PushTaskToQueue(rowTask, &(pool->queue_));
-				// new(futures + row) task_handle(std::move(rowFuture));
+				//TaskHandle rowFuture = pool->spawnTask(rowTask);
+				//new(futures + row) TaskHandle(std::move(rowFuture));
+				concurrentTaskQueuePush(this_task_info++, &matrixMicrokernelRowTask, &(pool->task_queue));
 			}
 			else {
-				matrixMicrokernelRowTask(microkernel_task_info);
+				matrixMicrokernelRowTask(this_task_info++);
 			}
 		}
 		for (size_t row = 0; row < remaining_rows_after_microkernel; row++) {
 
-			Matrixf32MicrokernelTaskInfo *microkernel_task_info = (Matrixf32MicrokernelTaskInfo *)malloc(sizeof(Matrixf32MicrokernelTaskInfo));
-			microkernel_task_info->kernel_width = kernel_width;
-			microkernel_task_info->kernel_height = 1;
-			microkernel_task_info->left_matrix = a;
-			microkernel_task_info->right_matrix = b;
-			microkernel_task_info->result_row_number = number_of_rows * kernel_height + row;
-			microkernel_task_info->result_matrix = result;
-
+			auto rowTask = [=, &result]() {
+				for (size_t col = 0; col < number_of_columns; col++) {
+					matrixf32MicrokernelApply(result, a, b, number_of_rows * kernel_height + row, col * kernel_width * SIMD_VECTOR_SIZE, kernel_width, 1);
+				}
+				return true;
+			};
 			if (pool) {
-				concurrentTaskQueuePush(microkernel_task_info, &matrixMicrokernelRowTask, &(pool->task_queue));
-			// task_handle rowFuture = PushTaskToQueue(rowTask, &(pool->queue_));
-			// new(futures + row) task_handle(std::move(rowFuture));
+				this_task_info->queue = &(pool->task_queue);
 			}
 			else {
-				matrixMicrokernelRowTask(microkernel_task_info);
+				this_task_info->queue = nullptr;
+			}
+			this_task_info->kernel_width = kernel_width;
+			this_task_info->kernel_height = 1;
+			this_task_info->left_matrix = a;
+			this_task_info->right_matrix = b;
+			this_task_info->result_row_number = number_of_rows * kernel_height + row;
+			this_task_info->result_matrix = result;
+			this_task_info->task_number = task_number++;
+
+			if (pool) {
+				concurrentTaskQueuePush(this_task_info++, &matrixMicrokernelRowTask, &(pool->task_queue));
+			//TaskHandle rowFuture = pool->spawnTask(rowTask);
+			//new(futures + number_of_rows * kernel_height + row) TaskHandle(std::move(rowFuture));
+			}
+			else {
+				matrixMicrokernelRowTask(this_task_info++);
 			}
 		}
 		if (pool) {
+			//pool->activeWait(*(futures + number_of_rows - 1));
 			threadPoolActiveWait(pool);
 			concurrentTaskQueueReset(&(pool->task_queue));
 		}
+		free(microkernel_task_info_list);
 	}
 	// Clean up what is left (columns)
 	if (number_of_columns * kernel_width * SIMD_VECTOR_SIZE < b->cols)

@@ -1,9 +1,9 @@
 #include "threadpool_better.h"
-// This should all be doable without going through futures and promises
 // How much of the cpp features can I remove from my multithreading and still have it work?
 
 void concurrentTaskQueueInit(ConcurrentTaskQueue *queue, size_t max_size) {
 	queue->tasks = (TaskInfoWrapper *)malloc(max_size * sizeof(TaskInfoWrapper));
+	queue->task_is_done = (bool *)calloc(max_size, sizeof(bool));
 	queue->max_size = max_size;
 	queue->starting_max_size = max_size;
 	queue->current_size = 0;
@@ -13,7 +13,9 @@ void concurrentTaskQueueInit(ConcurrentTaskQueue *queue, size_t max_size) {
 
 void concurrentTaskQueueReset(ConcurrentTaskQueue *queue) {
 	free(queue->tasks);
+	free(queue->task_is_done);
 	queue->tasks = (TaskInfoWrapper *)malloc((queue->starting_max_size) * sizeof(TaskInfoWrapper));
+	queue->task_is_done = (bool *)calloc(queue->starting_max_size, sizeof(bool));
 	queue->max_size = queue->starting_max_size;
 	queue->current_size = 0;
 	queue->current_head = 0;
@@ -41,7 +43,17 @@ void concurrentTaskQueuePush(void *task_info, ConcurrentTaskQueueCallback *task_
 }
 
 inline bool concurrentTaskQueueIsEmpty(ConcurrentTaskQueue *queue) {
-	return (queue->current_head == queue->current_size);
+	return (queue->current_head >= queue->current_size);
+}
+
+inline bool concurrentTaskQueueIsDone(ConcurrentTaskQueue *queue) {
+	bool is_empty = concurrentTaskQueueIsEmpty(queue);
+	bool is_done = true;
+	bool *this_task_is_done = queue->task_is_done;
+	for (size_t i = 0; i < queue->current_size; ++i) {
+		is_done &= *this_task_is_done++;
+	}
+	return is_empty && is_done;
 }
 
 volatile TaskInfoWrapper *concurrentTaskQueuePopTask(ConcurrentTaskQueue *queue) {
@@ -97,10 +109,10 @@ void threadPoolInit(ThreadPool *pool, size_t starting_queue_size, size_t n_threa
 	}
 	pool->threads = (std::thread *)malloc(n_threads * sizeof(std::thread));
 	pool->number_of_total_threads = n_threads;
+	concurrentTaskQueueInit(&(pool->task_queue), starting_queue_size);
 	for (size_t thread_number = 0; thread_number < n_threads; thread_number++) {
 		new(pool->threads + thread_number) std::thread(threadPoolRunThreadFunc, pool);
 	}
-	concurrentTaskQueueInit(&(pool->task_queue), starting_queue_size);
 	pool->is_active = true;
 }
 
@@ -128,6 +140,8 @@ bool threadPoolActiveWait(ThreadPool *pool) {
 			task_wrapper->task_function(task_wrapper->task_info);
 			i_did_work = true;
 		}
+	}
+	while (!concurrentTaskQueueIsDone(&(pool->task_queue))) {
 	}
 	return i_did_work;
 }
