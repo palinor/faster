@@ -3,11 +3,11 @@
 #include <functional>
 #include <mutex>
 
-using task = std::packaged_task<bool(void)>;
-using task_handle = std::future<bool>;
+using Task = std::packaged_task<bool(void)>;
+using TaskHandle = std::future<bool>;
 
-struct concurrent_task_queue {
-	task *tasks_;
+struct ConcurrentTaskQueue {
+	Task *tasks_;
 	size_t startingMaxSize_;
 	size_t maxSize_;
 	size_t currentSize_;
@@ -17,10 +17,10 @@ struct concurrent_task_queue {
 	bool interrupt_;
 };
 
-void InitConcurrentTaskQueue(concurrent_task_queue *queue, size_t startingMaxSize);
-void InterruptConcurrentTaskQueue(concurrent_task_queue *queue);
-inline bool IsQueueEmpty(concurrent_task_queue *queue);
-task_handle PushTaskToQueue(std::function<bool(void)> taskFunction, concurrent_task_queue *queue);
-bool PopTaskFromQueue(task *resultTask, concurrent_task_queue *queue);
-bool TryPopTaskFromQueue(task *resultTask, concurrent_task_queue *queue);
-void ResetConcurrentTaskQueue(concurrent_task_queue *queue);
+void InitConcurrentTaskQueue(ConcurrentTaskQueue *queue, size_t startingMaxSize);
+void InterruptConcurrentTaskQueue(ConcurrentTaskQueue *queue);
+inline bool IsQueueEmpty(ConcurrentTaskQueue *queue);
+TaskHandle PushTaskToQueue(std::function<bool(void)> taskFunction, ConcurrentTaskQueue *queue);
+bool PopTaskFromQueue(Task *resultTask, ConcurrentTaskQueue *queue);
+bool TryPopTaskFromQueue(Task *resultTask, ConcurrentTaskQueue *queue);
+void ResetConcurrentTaskQueue(ConcurrentTaskQueue *queue);

@@ -7,7 +7,26 @@
 #include <thread>
 #include <vector>
 
-#include "savine_concurrent_queue.h"
+template <class T>
+class ConcurrentQueue {
+	std::queue<T> my_queue_;
+	mutable std::mutex my_mutex_;
+	std::condition_variable my_cv_;
+	bool my_interrupt_;
+
+public:
+
+	ConcurrentQueue() : my_interrupt_(false) {}
+	~ConcurrentQueue() { interrupt(); }
+
+	void interrupt();
+	void resetInterrupt();
+	bool empty() const;
+	void push(T t);
+	bool pop(T &t);
+	bool tryPop(T &t);	
+	void clear();
+	};
 
 using Task = std::packaged_task<bool(void)>;
 using TaskHandle = std::future<bool>;

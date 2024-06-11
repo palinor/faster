@@ -1,8 +1,8 @@
-#include "concurrent_queue.h"
+#include "concurrent_queue_better.h"
 
 // This queue is not exactly memory safe. It needs to be manually reset every time we run a batch of jobs
-void InitConcurrentTaskQueue(concurrent_task_queue *queue, size_t maxSize) {
-	queue->tasks_ = (task *)malloc(maxSize * sizeof(task));
+void InitConcurrentTaskQueue(ConcurrentTaskQueue *queue, size_t maxSize) {
+	queue->tasks_ = (Task *)malloc(maxSize * sizeof(Task));
 	queue->maxSize_ = maxSize;
 	queue->startingMaxSize_ = maxSize;
 	queue->currentSize_ = 0;
@@ -10,9 +10,9 @@ void InitConcurrentTaskQueue(concurrent_task_queue *queue, size_t maxSize) {
 	queue->interrupt_ = false;
 }
 
-void ResetConcurrentTaskQueue(concurrent_task_queue *queue) {
+void ResetConcurrentTaskQueue(ConcurrentTaskQueue *queue) {
 	free(queue->tasks_);
-	queue->tasks_ = (task *)malloc((queue->startingMaxSize_) * sizeof(task));
+	queue->tasks_ = (Task *)malloc((queue->startingMaxSize_) * sizeof(Task));
 	queue->maxSize_ = queue->startingMaxSize_;
 	queue->currentSize_ = 0;
 	queue->currentHead_ = 0;
@@ -20,30 +20,30 @@ void ResetConcurrentTaskQueue(concurrent_task_queue *queue) {
 }
 
 
-task_handle PushTaskToQueue(std::function<bool(void)> taskFunction, concurrent_task_queue *queue) {
+TaskHandle PushTaskToQueue(std::function<bool(void)> taskFunction, ConcurrentTaskQueue *queue) {
 	queue->mutex_.lock();
 	if (queue->currentSize_ == queue->maxSize_) {
 		size_t newSize = queue->maxSize_ * 2 + 1;
-		task *newTasks = reinterpret_cast<task *>(realloc(queue->tasks_, newSize * sizeof(task)));
+		Task *newTasks = reinterpret_cast<Task *>(realloc(queue->tasks_, newSize * sizeof(Task)));
 		if (!newTasks) {
 			exit(1);
 		}
 		queue->tasks_ = newTasks;
 		queue->maxSize_ = newSize;
 	}
-	new(queue->tasks_ + (queue->currentSize_++)) task(std::move(taskFunction));
-	task_handle handle = queue->tasks_[queue->currentSize_ - 1].get_future();
+	new(queue->tasks_ + (queue->currentSize_++)) Task(std::move(taskFunction));
+	TaskHandle handle = queue->tasks_[queue->currentSize_ - 1].get_future();
 	//queue->tasks_[queue->currentSize_++] = task(std::move(element));
 	queue->cv_.notify_one();
 	queue->mutex_.unlock();
 	return handle;
 }
 
-inline bool IsQueueEmpty(concurrent_task_queue *queue) {
+inline bool IsQueueEmpty(ConcurrentTaskQueue *queue) {
 	return (queue->currentHead_ == queue->currentSize_);
 }
 
-bool PopTaskFromQueue(task *outputTask, concurrent_task_queue *queue) {
+bool PopTaskFromQueue(Task *outputTask, ConcurrentTaskQueue *queue) {
 	std::unique_lock<std::mutex> lk(queue->mutex_);
 	while (!(queue->interrupt_) && IsQueueEmpty(queue)) {
 		queue->cv_.wait(lk);
@@ -58,7 +58,7 @@ bool PopTaskFromQueue(task *outputTask, concurrent_task_queue *queue) {
 	return true;
 }
 
-void InterruptConcurrentTaskQueue(concurrent_task_queue *input) {
+void InterruptConcurrentTaskQueue(ConcurrentTaskQueue *input) {
 	input->mutex_.lock();
 	input->interrupt_ = true;
 	input->mutex_.unlock();
@@ -66,7 +66,7 @@ void InterruptConcurrentTaskQueue(concurrent_task_queue *input) {
 }
 
 
-bool TryPopTaskFromQueue(task *resultTask, concurrent_task_queue *queue) {
+bool TryPopTaskFromQueue(Task *resultTask, ConcurrentTaskQueue *queue) {
 	queue->mutex_.lock();
 	if (IsQueueEmpty(queue)) {
 		queue->mutex_.unlock();
