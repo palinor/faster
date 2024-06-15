@@ -3,6 +3,8 @@
 #include <dxgi1_4.h>
 #include <tchar.h>
 
+#include "imgui_impl_win32.cpp"
+#include "imgui_impl_dx12.cpp"
 #include "imgui_interface.cpp"
 
 
