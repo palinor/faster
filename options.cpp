@@ -249,6 +249,10 @@ float D2CashLevel(float forward, float fixed_swap_leg_coverage, float cms_maturi
 
 
 float CmsReplicationIntegralFunction(float strike, float fixed_swap_leg_coverage, float cms_maturity_in_years) {
+	if (fabsf(strike) < 1e-7) {
+		return cms_maturity_in_years * (cms_maturity_in_years + 1) * (cms_maturity_in_years + 2)
+		* fixed_swap_leg_coverage * fixed_swap_leg_coverage * fixed_swap_leg_coverage / 3;
+	}
 	float cash_level = CashLevel(strike, fixed_swap_leg_coverage, cms_maturity_in_years);
 	return (
 		2 * DCashLevel(strike, fixed_swap_leg_coverage, cms_maturity_in_years) * (strike / cash_level - 1)
@@ -262,6 +266,15 @@ float CmsReplicationForwardPremium(float forward, float *normal_vols, float *str
 	float result = forward;
 	size_t number_of_puts = 0;
 	float *this_strike = strikes;
+	if ((*this_strike > forward) || ((*(this_strike + n_strikes - 1)) < forward)) {
+		float starting_strike = forward - 3 * (*normal_vols);
+		float ending_strike = forward + 3 * (*normal_vols);
+		float strike_step = (ending_strike - starting_strike) / ((float)n_strikes);
+		for (size_t strike_idx = 0; strike_idx < n_strikes; ++strike_idx) {
+			*this_strike++ = starting_strike + (float)strike_step * (float)strike_idx;
+		}
+		this_strike = strikes;
+	}
 	while (*this_strike++ < forward) {
 		++number_of_puts;
 	}
@@ -271,6 +284,11 @@ float CmsReplicationForwardPremium(float forward, float *normal_vols, float *str
 	float last_strike = *this_strike;
 	float *this_vol = normal_vols;
 
+	float cm_replication_value = CmsReplicationIntegralFunction(
+		*this_strike,
+		fixed_swap_leg_coverage,
+		cms_maturity_in_years
+	);
 	float last_call_price = OptionForwardPremiumNormalVol(
 		*(this_vol + number_of_puts),
 		forward,
@@ -278,6 +296,7 @@ float CmsReplicationForwardPremium(float forward, float *normal_vols, float *str
 		time_to_payment_in_years,
 		OptionType::CALL
 	);
+	float last_call_integration_point = cm_replication_value * last_call_price;
 	float last_put_price = OptionForwardPremiumNormalVol(
 		*this_vol++,
 		forward,
@@ -285,10 +304,17 @@ float CmsReplicationForwardPremium(float forward, float *normal_vols, float *str
 		time_to_payment_in_years,
 		OptionType::PUT
 		);
+	float last_put_integration_point = cm_replication_value * last_put_price;
 
 	for (size_t i = 1; i < n_strikes; ++i) {
+		float cm_function_value = CmsReplicationIntegralFunction(
+				*this_strike,
+				fixed_swap_leg_coverage,
+				cms_maturity_in_years
+		);
 		if (i < number_of_puts) {
 			float strike_distance = (*this_strike - last_strike);
+			last_strike = *this_strike;
 			float put_price = OptionForwardPremiumNormalVol(
 				*this_vol++,
 				forward,
@@ -296,17 +322,17 @@ float CmsReplicationForwardPremium(float forward, float *normal_vols, float *str
 				time_to_payment_in_years,
 				OptionType::PUT
 			);
-			last_strike = *this_strike;
-			put_integral += (last_put_price + put_price) * strike_distance / 2;
-			last_put_price = put_price;
+			float integration_value = cm_function_value * put_price;
+			put_integral += (last_put_integration_point + integration_value) * strike_distance / 2;
+			last_put_integration_point = integration_value;
 		}
 		else if (i == number_of_puts) {
-			last_strike = *(this_strike + 1);
 			++this_strike;
 			++this_vol;
 		}
 		else {
 			float strike_distance = (*this_strike - last_strike);
+			last_strike = *this_strike;
 			float call_price = OptionForwardPremiumNormalVol(
 				*this_vol++,
 				forward,
@@ -314,9 +340,9 @@ float CmsReplicationForwardPremium(float forward, float *normal_vols, float *str
 				time_to_payment_in_years,
 				OptionType::PUT
 			);
-			last_strike = *this_strike;
-			call_integral += (last_call_price + call_price) * strike_distance / 2;
-			last_call_price = call_price;
+			float integration_value = cm_function_value * call_price;
+			call_integral += (last_call_integration_point + integration_value) * strike_distance / 2;
+			last_call_integration_point = integration_value;
 		}
 	}
 
