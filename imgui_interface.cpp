@@ -7,14 +7,12 @@
 #include "imgui/examples/example_apple_metal/yield_curve.h"
 #else
 #define IMGUI_DEFINE_MATH_OPERATORS
-#include "imgui_impl_win32.cpp"
-#include "imgui_impl_dx12.cpp"
-#include "imgui_draw.cpp"
-#include "imgui_tables.cpp"
-#include "imgui_widgets.cpp"
-#include "imgui.cpp"
-#include "implot_items.cpp"
-#include "implot.cpp"
+#include "imgui/imgui_draw.cpp"
+#include "imgui/imgui_tables.cpp"
+#include "imgui/imgui_widgets.cpp"
+#include "imgui/imgui.cpp"
+#include "implot/implot_items.cpp"
+#include "implot/implot.cpp"
 #include "yield_curve.cpp"
 #include "options.cpp"
 #endif
@@ -36,6 +34,7 @@ struct DisplayData {
 	float *forward_rates = nullptr;
 	float *swap_fixed_payment_schedule = nullptr;
 	float *swap_rates = nullptr;
+	float *forward_starting_swap_rates = nullptr;
 
 	size_t number_of_cms = 5;
 	size_t number_of_strikes = 5;
@@ -72,6 +71,7 @@ void displayDataInit(
 	if (!data->forward_rates) data->forward_rates = (float *)malloc(number_of_fras * sizeof(float));
 	if (!data->swap_fixed_payment_schedule) data->swap_fixed_payment_schedule = (float *)calloc(number_of_swaps, sizeof(float));
 	if (!data->swap_rates) data->swap_rates = (float *)malloc(number_of_swaps * sizeof(float));
+	if (!data->forward_starting_swap_rates) data->forward_starting_swap_rates = (float *)malloc(number_of_cms * sizeof(float));
 	if (!data->plot_maturities) data->plot_maturities = (float *)calloc(number_of_plot_points, sizeof(float));
 	if (!data->plot_short_rates) data->plot_short_rates = (float *)calloc(number_of_plot_points, sizeof(float));
 	if (!data->plot_discount_factors) data->plot_discount_factors = (float *)calloc(number_of_plot_points, sizeof(float));
@@ -128,6 +128,7 @@ void displayDataFree(DisplayData *data) {
 	free(data->forward_rates);
 	free(data->swap_fixed_payment_schedule);
 	free(data->swap_rates);
+	free(data->forward_starting_swap_rates);
 	free(data->plot_overnight_forwards);
 	free(data->strikes);
 	free(data->cms_values);
@@ -146,7 +147,6 @@ void imGuiRenderLoop(DisplayData *data) {
 		ImPlot::PlotLine("Short Rate", data->plot_maturities, data->plot_short_rates, data->number_of_plot_points);
 		ImPlot::PlotLine("Discount Factors", data->plot_maturities, data->plot_discount_factors, data->number_of_plot_points);
 		ImPlot::PlotLine("Overnight Forwards", data->plot_maturities, data->plot_overnight_forwards, data->number_of_plot_points);
-		ImPlot::PlotLine("CMS Forwards", data->times_to_maturity, data->cms_values, data->number_of_cms);
 		ImPlot::EndPlot();
 	}
 	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
@@ -287,7 +287,6 @@ void imGuiRenderLoop(DisplayData *data) {
 			data->plot_discount_factors[i] = discount_factor;
 			data->plot_overnight_forwards[i] = *this_overnight_forward;
 		}
-
 	} break;
 	}
 	ImGui::End();
@@ -321,6 +320,7 @@ void imGuiRenderLoop(DisplayData *data) {
 	}
 	float *this_time_to_maturity = data->times_to_maturity;
 	float *this_cms_value = data->cms_values;
+	float *this_forward_swap_rate = data->forward_starting_swap_rates;
 	for (size_t i = 0; i < data->number_of_cms; ++i) {
 		float df;
 		DiscountFactorSpotFromYieldCurve(&df, data->yield_curve, this_time_to_maturity);
@@ -339,6 +339,7 @@ void imGuiRenderLoop(DisplayData *data) {
 				data->shifted_sabr_params->zeta
 			);
 		}
+		*this_forward_swap_rate++ = forward;
 		*this_cms_value++ = CmsReplicationForwardPremium(forward, this_smile, data->strikes, data->number_of_strikes, *this_time_to_maturity++, 1, data->cms_maturity);
 	}
 	ImGui::End();
@@ -350,6 +351,18 @@ void imGuiRenderLoop(DisplayData *data) {
 			snprintf(maturity_label, (size_t)32, "%i Y", static_cast<int>(data->times_to_maturity[i]));
 			ImPlot::PlotLine(maturity_label, data->strikes, data->normal_vols + i * data->number_of_strikes, data->number_of_strikes);
 		}
+		ImPlot::EndPlot();
+	}
+	ImGui::End();
+
+	ImGui::Begin("Forward looking");
+	char cms_label[32];
+	char forward_swap_label[32];
+	snprintf(cms_label, (size_t)32, "%i Y CMS", (int)(data->cms_maturity));
+	snprintf(forward_swap_label, (size_t)32, "%i Y Forward swap", (int)(data->cms_maturity));
+	if (ImPlot::BeginPlot("Forward swaps and CMS")) {
+		ImPlot::PlotLine(cms_label, data->times_to_maturity, data->cms_values, data->number_of_cms);
+		ImPlot::PlotLine(forward_swap_label, data->times_to_maturity, data->forward_starting_swap_rates, data->number_of_cms);
 		ImPlot::EndPlot();
 	}
 	ImGui::End();
