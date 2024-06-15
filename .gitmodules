@@ -7,3 +7,6 @@
 [submodule "implot"]
 	path = implot
 	url = git@github.com:epezent/implot.git
+[submodule "databento-cpp"]
+	path = databento-cpp
+	url = git@github.com:databento/databento-cpp.git

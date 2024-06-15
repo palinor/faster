@@ -31,6 +31,16 @@
 			"args":[],
 			"cwd": "${workspaceFolder}",
 			"preLaunchTask": "Clang build release"
+		},
+
+		{
+			"type": "cppdbg",
+			"request": "launch",
+			"name": "Debug default",
+			"program": "${workspaceFolder}/linux_main",
+			"args": [],
+			"cwd": "${workspaceFolder}",
+			"preLaunchTask": "Clang build debug"
 		}
 	]
 }
