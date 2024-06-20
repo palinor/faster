@@ -9,77 +9,18 @@
 				"-fcolor-diagnostics",
 				"-fansi-escape-codes",
 				"-g",
-				"linux_main.cpp",
-				"-o",
-				"${fileDirname}/linux_main",
-				"-Wall",
-				"-Wextra",
-				"-pedantic",
-				"-DEBUG",
-				"-std=c++20",
-				"-mavx",
-				"-mfma",
-				"-pthread",
-				"-lglfw",
-				"-ldl",
-				"-Iimgui"
-			],
-			"options": {
-				"cwd": "${fileDirname}"
-			},
-			"problemMatcher": [
-				"$gcc"
-			],
-			"group": "build",
-			"detail": "compiler: /usr/bin/clang"
-		},
-		
-		{
-			"type": "cppbuild",
-			"label": "Clang build release",
-			"command": "/usr/bin/clang++",
-			"args": [
-				"-fcolor-diagnostics",
-				"-fansi-escape-codes",
-				"-g",
 				"${file}",
 				"-o",
 				"${fileDirname}/${fileBasenameNoExtension}",
-				"-std=c++20",
-				"-mavx",
-				"-mfma",
-				"-pthread",
-				"-lglfw",
-				"-lglfw",
-				"-ldl",
-				"-Iimgui",
-				"-O3"
-			],
-			"options": {
-				"cwd": "${fileDirname}"
-			},
-			"problemMatcher": [
-				"$gcc"
-			],
-			"group": "build",
-			"detail": "compiler: /usr/bin/clang"
-		},
-
-		{
-			"type": "cppbuild",
-			"label": "Clang build tests debug",
-			"command": "/usr/bin/clang",
-			"args": [
-				"-fcolor-diagnostics",
-				"-fansi-escape-codes",
-				"-g",
-				"tests.c",
-				"-o",
-				"${fileDirname}/tests",
 				"-Wall",
 				"-Wextra",
 				"-pedantic",
 				"-DEBUG",
+				"-std=gnu++20",
+				"-L/Users/aionfeehan/anaconda3/lib",
+				"-lcurl",
+				"-rpath ",
+				"/Users/aionfeehan/anaconda3/lib",
 				// "-pthread"
 			],
 			"options": {
@@ -89,40 +30,102 @@
 				"$gcc"
 			],
 			"group": "build",
-			"detail": "compiler: /usr/bin/clang"
+			"detail": "compiler: /usr/bin/clang++"
+		},
+
+		{
+			"type": "cppbuild",
+			"label": "Clang build tests debug",
+			"command": "/usr/bin/clang++",
+			"args": [
+				"-fcolor-diagnostics",
+				"-fansi-escape-codes",
+				"-g",
+				"tests.cpp",
+				"-o",
+				"${fileDirname}/tests",
+				"-Wall",
+				"-Wextra",
+				"-pedantic",
+				"-DEBUG",
+				"-std=gnu++20"
+				// "-pthread"
+			],
+			"options": {
+				"cwd": "${fileDirname}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build",
+			"detail": "compiler: /usr/bin/clang++"
+		},
+		
+		{
+			"type": "cppbuild",
+			"label": "Clang build release",
+			"command": "/usr/bin/clang++",
+			"args": [
+				"${file}",
+				"-o",
+				"${fileDirname}/${fileBasenameNoExtension}",
+				"-g",
+				"-O3",
+				"-std=c++20",
+				"--include-directory",
+				"${workspaceFolder}/imgui/",
+				"--include-directory",
+				"${workspaceFolder}/imgui/backends/",
+				"-L/Users/aionfeehan/anaconda3/lib",
+				"-lcurl",
+				"-rpath ",
+				"/Users/aionfeehan/anaconda3/lib",
+				// "-Rpass=loop-vectorize",
+				// "-pthread"
+			],
+			"options": {
+				"cwd": "${fileDirname}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build",
+			"detail": "compiler: /usr/bin/clang++"
 		},
 
 		{
 			"type": "cppbuild",
 			"label": "Clang build tests release fast",
-			"command": "/usr/bin/clang",
+			"command": "/usr/bin/clang++",
 			"args": [
-				"tests.c",
+				"tests.cpp",
 				"-o",
 				"${fileDirname}/tests",
 				"-g",
 				"-Ofast",
+				"-std=gnu++20"
 			],
 			"options": {
-				"cwd": "${fileDirname}"
+				"cwd": "${workspaceFolder}"
 			},
 			"problemMatcher": [
 				"$gcc"
 			],
 			"group": "build",
-			"detail": "compiler: /usr/bin/clang"
+			"detail": "compiler: /usr/bin/clang++"
 		},
 
 		{
 			"type": "cppbuild",
 			"label": "Clang build tests release O3",
-			"command": "/usr/bin/clang",
+			"command": "/usr/bin/clang++",
 			"args": [
-				"tests.c",
+				"tests.cpp",
 				"-o",
-				"${fileDirname}/tests",
+				"${workspaceFolder}/tests",
 				"-g",
 				"-O3",
+				"-std=gnu++20"
 			],
 			"options": {
 				"cwd": "${fileDirname}"
@@ -131,13 +134,13 @@
 				"$gcc"
 			],
 			"group": "build",
-			"detail": "compiler: /usr/bin/clang"
+			"detail": "compiler: /usr/bin/clang++"
 		},
 
 		{
 			"type": "cppbuild",
 			"label": "Clang build shared object",
-			"command": "/usr/bin/clang",
+			"command": "/usr/bin/clang++",
 			"args": [
 				"-fPIC",
 				"-c",
@@ -150,13 +153,13 @@
 				"$gcc"
 			],
 			"group": "build",
-			"detail": "compiler: /usr/bin/clang"
+			"detail": "compiler: /usr/bin/clang++"
 		},
 
 		{
 			"type": "cppbuild",
 			"label": "Clang build library",
-			"command": "/usr/bin/clang",
+			"command": "/usr/bin/clang++",
 			"args": [
 				"-shared",
 				"-o",
@@ -170,7 +173,7 @@
 				"$gcc"
 			],
 			"group": "build",
-			"detail": "compiler: /usr/bin/clang",
+			"detail": "compiler: /usr/bin/clang++",
 			"dependsOn": ["Clang build shared object"]
 		},
 
@@ -188,7 +191,7 @@
 		{
 			"type": "process",
 			"label": "Clang build and run test release O3",
-			"command": "./${fileBasenameNoExtension}",
+			"command": "./tests",
 			"options": {
 				"cwd": "${fileDirname}"
 			},
@@ -205,6 +208,55 @@
 			},
 			"group": "build",
 			"dependsOn": ["Clang build tests release fast"],
+		},
+
+		{
+			"type": "process",
+			"label": "Run debug build script",
+			"command": "./scripts/build.sh",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+
+		{
+			"type": "process",
+			"label": "Debug build and run tests",
+			"command": "./tests",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"group": {
+				"kind": "build",
+			},
+			"dependsOn": ["Run debug build script"]
+		},
+
+		{
+			"type": "process",
+			"label": "Run release build script",
+			"command": "./scripts/releasebuild.sh",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"group": "build"
+		},
+
+		{
+			"type": "process",
+			"label": "Release build and run tests",
+			"command": "./tests",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"group": {
+				"kind": "build",
+			},
+			"dependsOn": ["Run release build script"]
 		}
 	]
 }

@@ -1,3 +1,4 @@
+#include <cerrno>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -6,7 +7,7 @@
 
 #define CURL_STATICLIB
 #include "curl/curl.h"
-#include "date.cpp"
+#include "yield_curve.cpp"
 
 #pragma comment (lib, "libcurl_a.lib")
 #pragma comment (lib, "Ws2_32.lib")
@@ -165,7 +166,7 @@ long HandleStrtol(const char *input) {
 	if (res == 0) {
 		if (errno != 0) {
 			char err_msg[64];
-			sprintf_s(err_msg, 64, 
+			sprintf(err_msg, 
 			    "Encountered error in strtol, errno : %d, input: %s",
 				errno, input);
 			// todo(AION) figure out what to do with error messages
@@ -173,7 +174,7 @@ long HandleStrtol(const char *input) {
 		}
 		else if (buffer == endptr) {
 			char err_msg[64];
-			sprintf_s(err_msg, 64,
+			sprintf(err_msg,
 				"Encountered error in strtol, no characters read from input: %s",
 				input);
 			// log(err_msg);
@@ -191,15 +192,40 @@ float HandleStrtof(const char *input) {
 	if (res == 0) {
 		if (errno != 0) {
 			char err_msg[64];
-			sprintf_s(err_msg, 64,
+			sprintf(err_msg,
 				"Encountered error in strtof, errno : %d, input: %s",
 				errno, input);
 			// log(err_msg);
 		}
 		else if (buffer == endptr) {
 			char err_msg[64];
-			sprintf_s(err_msg, 64,
+			sprintf(err_msg,
 				"Encountered error in strtof, no characters read from input: %s",
+				input);
+			// log(err_msg);
+		}
+	}
+	return res;
+}
+
+double HandleStrtod(const char *input) {
+	char buffer[32];
+	size_t input_len = strlen(input);
+	StripCommas(buffer, input, input_len + 1);
+	char *endptr = NULL;
+	float res = strtod(buffer, &endptr);
+	if (res == 0) {
+		if (errno != 0) {
+			char err_msg[64];
+			sprintf(err_msg,
+				"Encountered error in strtod, errno : %d, input: %s",
+				errno, input);
+			// log(err_msg);
+		}
+		else if (buffer == endptr) {
+			char err_msg[64];
+			sprintf(err_msg,
+				"Encountered error in strtod, no characters read from input: %s",
 				input);
 			// log(err_msg);
 		}
@@ -231,10 +257,10 @@ int CastIntTo2Chars(char *output, int input) {
 	}
 	else if (input < 10) {
 		output[0] = '0';
-		sprintf_s(output + 1, 1, "%d", input);
+		sprintf(output + 1, "%d", input);
 	}
 	else {
-		sprintf_s(output, 1, "%d", input);
+		sprintf(output, "%d", input);
 	}
 	return 0;
 }
@@ -321,39 +347,12 @@ int DatetimeStringFromDateAndTime(char *output_string, Date *input_date, Time *i
 #define DTCC_FIXED_PAYMENT_FREQUENCY_COL_2 "FIXED RATE PAYMENT FREQUENCY PERIOD-LEG 2"
 #define DTCC_FLOATING_PAYMENT_FREQUENCY_COL_2 "FLOATING RATE PAYMENT FREQUENCY PERIOD-LEG 2"
 
-enum class RefRate {
-	REF_RATE_ERROR,
-	USSOFR,
-	USSTERM,
-	USLIBOR,
-	USCPI
-};
-enum class PayFreq { PAY_FREQ_ERROR, M, Q, S, A };
-enum class Currency { CURRENCY_ERROR, USD, EUR };
-
-struct Swap {
-	long id;
-	Date start_date;
-	Date end_date;
-	Date trade_date;
-	Time trade_time;
-	float fixed_rate;
-	float notional;
-	RefRate ref_rate;
-	PayFreq fixed_pay_frequency;
-	PayFreq floating_pay_frequency;
-	Currency currency;
-	enum { ACTION_ERROR, NEW, CANCEL, CORRECT, MODIFY } action_type;
-	enum { TRANSACTION_ERROR, TRADE, AMENDMENT, TERMINATION } transaction_type;
-	enum { BLOCK_TRADE_ERROR, Y, N } is_block_trade;
-	enum { VENUE_ERROR, ON, OFF } venue;
-};
-
 void SwapAttributeLine(StringBuffer *buffer, const char *attr_name, char *attr_value) {
 	char line[32];
 	sprintf(line, "%s: %s \n", attr_name, attr_value);
 	StringBufferAppendString(buffer, line);
 }
+
 
 void LogSwapDetails(Swap *swap) {
 	char msg_buffer[256];
@@ -363,7 +362,15 @@ void LogSwapDetails(Swap *swap) {
 	sprintf(msg_buffer, "%ld", swap->id);
 	SwapAttributeLine(&buffer, "ID", msg_buffer);
 	// Notional
-	sprintf(msg_buffer, "%lf", swap->notional);
+	if (swap->header.precision == Precision::FLOAT) {
+		SwapScheduleF *schedule = (SwapScheduleF *)(swap->schedule);
+		sprintf(msg_buffer, "%lf", schedule->notional);
+	}
+	else {
+		SwapScheduleD *schedule = (SwapScheduleD *)(swap->schedule);
+		sprintf(msg_buffer, "%ld", schedule->notional);
+
+	}
 	SwapAttributeLine(&buffer, "Notional", msg_buffer);
 	// Start
 	DateStringFromDate(msg_buffer, &swap->start_date);
@@ -375,7 +382,14 @@ void LogSwapDetails(Swap *swap) {
 	DatetimeStringFromDateAndTime(msg_buffer, &swap->trade_date, &swap->trade_time);
 	SwapAttributeLine(&buffer, "Traded at", msg_buffer);
 	// Fixed rate
-	sprintf(msg_buffer, "%f", swap->fixed_rate);
+	if (swap->header.precision == Precision::FLOAT) {
+		SwapScheduleF *schedule = (SwapScheduleF *)(swap->schedule);
+		sprintf(msg_buffer, "%f", schedule->fixed_rate);
+	}
+	else {
+		SwapScheduleD *schedule = (SwapScheduleD *)(swap->schedule);
+		sprintf(msg_buffer, "%d", schedule->fixed_rate);
+	}
 	SwapAttributeLine(&buffer, "Fixed rate", msg_buffer);
 	printf(buffer.string);
 	StringBufferClear(&buffer);
@@ -596,7 +610,7 @@ int ParseDTCCLine(
 		// between " "
 		if ((this_char == ',') && (open_quote == 0)) {
 			buffer[buffer_size] = '\0';
-			strcpy_s(&elem_array[elem_idx], buffer_size, buffer);
+			strcpy(&elem_array[elem_idx], buffer);
 			elem_idx = elem_idx + max_colname_len;
 			buffer_size = 0;
 		}
@@ -625,8 +639,8 @@ int ParseDTCCLine(
 	return (int)elem_idx / (int)max_colname_len;
 }
 
-void SwapSetValue(Swap *swap, enum SwapAttribute attr_name,
-	char *attr_value) {
+void SwapSetValue(Swap *swap, SwapAttribute attr_name, char *attr_value) {
+	SwapHeader *header = (SwapHeader *)swap;
 	switch (attr_name) {
 	case SwapAttribute::ID:
 		swap->id = HandleStrtol(attr_value);
@@ -641,10 +655,24 @@ void SwapSetValue(Swap *swap, enum SwapAttribute attr_name,
 		ParseDatetime(attr_value, &swap->trade_date, &swap->trade_time);
 		break;
 	case SwapAttribute::FIXED_RATE:
-		if (strlen(attr_value) > 0) swap->fixed_rate = HandleStrtof(attr_value);
+		if (header->precision == Precision::FLOAT) {
+			SwapScheduleF *schedule = (SwapScheduleF *)(swap->schedule);
+			if (strlen(attr_value) > 0) schedule->fixed_rate = HandleStrtof(attr_value);
+		}
+		else {
+			SwapScheduleD *schedule = (SwapScheduleD *)(swap->schedule);
+			if (strlen(attr_value) > 0) schedule->fixed_rate = HandleStrtod(attr_value);
+		}
 		break;
 	case SwapAttribute::NOTIONAL:
-		swap->notional = HandleStrtof(attr_value);
+		if (header->precision == Precision::FLOAT) {
+			SwapScheduleF *schedule = (SwapScheduleF *)(swap->schedule);
+			schedule->notional = HandleStrtof(attr_value);
+		}
+		else {
+			SwapScheduleD *schedule = (SwapScheduleD *)(swap->schedule);
+			schedule->notional = HandleStrtod(attr_value);
+		}
 		break;
 	case SwapAttribute::ACTION_TYPE:
 		if (strcmp(attr_value, "NEWT") == 0) {
@@ -862,9 +890,9 @@ int SwapFromInputLine(Swap *swap, const char *input_line)
 			{
 				separator_idx++;
 			}
-			strncpy_s(attribute_buffer, 64, input_line + begin_idx,
+			strncpy(attribute_buffer, input_line + begin_idx,
 				separator_idx - begin_idx);
-			strncpy_s(value_buffer, 64, input_line + separator_idx,
+			strncpy(value_buffer, input_line + separator_idx,
 				end_idx - separator_idx);
 			begin_idx = end_idx + 1;
 			this_attribute = EvaluateColname(attribute_buffer);

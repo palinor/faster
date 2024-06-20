@@ -1,17 +1,73 @@
 #include <math.h>
 #include <stdlib.h>
 
-enum class YieldCurveType {
-	SHORT_RATE,
-	OVERNIGHT_FORWARD,
-	COUNT
-};
+#include "date.cpp"
 
 enum class Precision {
 	FLOAT,
 	DOUBLE,
 	COUNT
 };
+enum class RefRate {
+	REF_RATE_ERROR,
+	USSOFR,
+	USSTERM,
+	USLIBOR,
+	USCPI
+};
+enum class PayFreq { PAY_FREQ_ERROR, M, Q, S, A };
+enum class Currency { CURRENCY_ERROR, USD, EUR };
+struct SwapHeader {
+	Precision precision;
+};
+struct SwapScheduleHeader {
+	Precision precision;
+};
+
+struct Swap {
+	SwapHeader header;
+	long id;
+	Date start_date;
+	Date end_date;
+	Date trade_date;
+	Time trade_time;
+	RefRate ref_rate;
+	PayFreq fixed_pay_frequency;
+	PayFreq floating_pay_frequency;
+	Currency currency;
+	enum { ACTION_ERROR, NEW, CANCEL, CORRECT, MODIFY } action_type;
+	enum { TRANSACTION_ERROR, TRADE, AMENDMENT, TERMINATION } transaction_type;
+	enum { BLOCK_TRADE_ERROR, Y, N } is_block_trade;
+	enum { VENUE_ERROR, ON, OFF } venue;
+	void *schedule;
+};
+
+struct SwapScheduleF {
+	SwapScheduleHeader header;
+	float notional;
+	float fixed_rate;
+	float *fixed_payment_times = nullptr;
+	float *floating_payment_times = nullptr;
+	size_t number_of_fixed_payments;
+	size_t number_of_floating_payments;
+};
+
+struct SwapScheduleD {
+	SwapScheduleHeader header;
+	double notional;
+	double fixed_rate;
+	double *fixed_payment_times = nullptr;
+	double *floating_payment_times = nullptr;
+	size_t number_of_fixed_payments;
+	size_t number_of_floating_payments;
+};
+
+enum class YieldCurveType {
+	SHORT_RATE,
+	OVERNIGHT_FORWARD,
+	COUNT
+};
+
 
 struct YieldCurveHeader {
 	YieldCurveType curve_type;
@@ -494,46 +550,25 @@ int YieldCurveOvernightForwardStripFras(void *yield_curve_input, void *forward_r
 	return 0;
 }
 
-struct YieldCurveSwapHeader {
-	enum { FLOAT, DOUBLE, COUNT } type;
-};
 
-struct YieldCurveSwapF {
-	YieldCurveSwapHeader header;
-	size_t number_of_fixed_payments;
-	size_t number_of_floating_payments;
-	float swap_rate;
-	float *fixed_payment_times = nullptr;
-	float *floating_payment_times = nullptr;
-};
-
-struct YieldCurveSwapD {
-	YieldCurveSwapHeader header;
-	size_t number_of_fixed_payments;
-	size_t number_of_floating_payments;
-	double swap_rate;
-	double *fixed_payment_times = nullptr;
-	double *floating_payment_times = nullptr;
-};
-
-int YieldCurveSwapFInit(YieldCurveSwapF *swap, size_t number_of_fixed_payments, size_t number_of_floating_payments, float swap_rate) {
-	swap->header.type = YieldCurveSwapHeader::FLOAT;
-	swap->swap_rate = swap_rate;
-	if ((swap->fixed_payment_times) && (swap->number_of_fixed_payments != number_of_fixed_payments)) {
-		swap->fixed_payment_times = (float *)realloc(swap->fixed_payment_times, number_of_fixed_payments * sizeof(float));
+int SwapScheduleInitF(SwapScheduleF *swap_schedule, size_t number_of_fixed_payments, size_t number_of_floating_payments, float swap_rate) {
+	swap_schedule->header.precision = Precision::FLOAT;
+	swap_schedule->fixed_rate = swap_rate;
+	if ((swap_schedule->fixed_payment_times) && (swap_schedule->number_of_fixed_payments != number_of_fixed_payments)) {
+		swap_schedule->fixed_payment_times = (float *)realloc(swap_schedule->fixed_payment_times, number_of_fixed_payments * sizeof(float));
 	}
-	if (!swap->fixed_payment_times) swap->fixed_payment_times = (float *)malloc(number_of_fixed_payments * sizeof(float));
-	if (!swap->fixed_payment_times) return -1;
+	if (!swap_schedule->fixed_payment_times) swap_schedule->fixed_payment_times = (float *)malloc(number_of_fixed_payments * sizeof(float));
+	if (!swap_schedule->fixed_payment_times) return -1;
 
-	if ((swap->floating_payment_times) && (swap->number_of_floating_payments != number_of_floating_payments)) {
-		swap->floating_payment_times = (float *)realloc(swap->floating_payment_times, number_of_floating_payments * sizeof(float));
+	if ((swap_schedule->floating_payment_times) && (swap_schedule->number_of_floating_payments != number_of_floating_payments)) {
+		swap_schedule->floating_payment_times = (float *)realloc(swap_schedule->floating_payment_times, number_of_floating_payments * sizeof(float));
 	}
-	if (!swap->floating_payment_times) swap->floating_payment_times = (float *)malloc(number_of_floating_payments * sizeof(float));
-	if (!swap->floating_payment_times) return -1;
-	swap->number_of_fixed_payments = number_of_fixed_payments;
-	swap->number_of_floating_payments = number_of_floating_payments;
-	float *fixed_payment_time = swap->fixed_payment_times;
-	float *floating_payment_time = swap->floating_payment_times;
+	if (!swap_schedule->floating_payment_times) swap_schedule->floating_payment_times = (float *)malloc(number_of_floating_payments * sizeof(float));
+	if (!swap_schedule->floating_payment_times) return -1;
+	swap_schedule->number_of_fixed_payments = number_of_fixed_payments;
+	swap_schedule->number_of_floating_payments = number_of_floating_payments;
+	float *fixed_payment_time = swap_schedule->fixed_payment_times;
+	float *floating_payment_time = swap_schedule->floating_payment_times;
 	for (size_t i = 0; i < number_of_fixed_payments; ++i) {
 		*fixed_payment_time++ = (float)(i + 1);
 	}
@@ -543,25 +578,25 @@ int YieldCurveSwapFInit(YieldCurveSwapF *swap, size_t number_of_fixed_payments, 
 	return 0;
 }
 
-int YieldCurveSwapDInit(YieldCurveSwapD *swap, size_t number_of_fixed_payments, size_t number_of_floating_payments, double swap_rate) {
-	swap->header.type = YieldCurveSwapHeader::DOUBLE;
-	swap->swap_rate = swap_rate;
-	if ((swap->fixed_payment_times) && (swap->number_of_fixed_payments != number_of_fixed_payments)) {
-		swap->fixed_payment_times = (double *)realloc(swap->fixed_payment_times, number_of_fixed_payments * sizeof(double));
+int SwapScheduleDInit(SwapScheduleD *swap_schedule, size_t number_of_fixed_payments, size_t number_of_floating_payments, double swap_rate) {
+	swap_schedule->header.precision = Precision::DOUBLE;
+	swap_schedule->fixed_rate = swap_rate;
+	if ((swap_schedule->fixed_payment_times) && (swap_schedule->number_of_fixed_payments != number_of_fixed_payments)) {
+		swap_schedule->fixed_payment_times = (double *)realloc(swap_schedule->fixed_payment_times, number_of_fixed_payments * sizeof(double));
 	}
-	if (!swap->fixed_payment_times) swap->fixed_payment_times = (double *)malloc(number_of_fixed_payments * sizeof(double));
-	if (!swap->fixed_payment_times) return -1;
+	if (!swap_schedule->fixed_payment_times) swap_schedule->fixed_payment_times = (double *)malloc(number_of_fixed_payments * sizeof(double));
+	if (!swap_schedule->fixed_payment_times) return -1;
 
-	if ((swap->floating_payment_times) && (swap->number_of_floating_payments != number_of_floating_payments)) {
-		swap->floating_payment_times = (double *)realloc(swap->floating_payment_times, number_of_floating_payments * sizeof(double));
+	if ((swap_schedule->floating_payment_times) && (swap_schedule->number_of_floating_payments != number_of_floating_payments)) {
+		swap_schedule->floating_payment_times = (double *)realloc(swap_schedule->floating_payment_times, number_of_floating_payments * sizeof(double));
 	}
-	if (!swap->floating_payment_times) swap->floating_payment_times = (double *)malloc(number_of_floating_payments * sizeof(double));
-	if (!swap->floating_payment_times) return -1;
+	if (!swap_schedule->floating_payment_times) swap_schedule->floating_payment_times = (double *)malloc(number_of_floating_payments * sizeof(double));
+	if (!swap_schedule->floating_payment_times) return -1;
 
-	swap->number_of_fixed_payments = number_of_fixed_payments;
-	swap->number_of_floating_payments = number_of_floating_payments;
-	double *fixed_payment_time = swap->fixed_payment_times;
-	double *floating_payment_time = swap->floating_payment_times;
+	swap_schedule->number_of_fixed_payments = number_of_fixed_payments;
+	swap_schedule->number_of_floating_payments = number_of_floating_payments;
+	double *fixed_payment_time = swap_schedule->fixed_payment_times;
+	double *floating_payment_time = swap_schedule->floating_payment_times;
 	for (size_t i = 0; i < number_of_fixed_payments; ++i) {
 		*fixed_payment_time++ = (double)(i + 1);
 	}
@@ -571,7 +606,12 @@ int YieldCurveSwapDInit(YieldCurveSwapD *swap, size_t number_of_fixed_payments, 
 	return 0;
 }
 
-inline void YieldCurveSwapFree(YieldCurveSwapF *swap) {
+inline void SwapScheduleFFree(SwapScheduleF *swap) {
+	free(swap->fixed_payment_times);
+	free(swap->floating_payment_times);
+}
+
+inline void SwapScheduleDFree(SwapScheduleD *swap) {
 	free(swap->fixed_payment_times);
 	free(swap->floating_payment_times);
 }
@@ -613,8 +653,8 @@ int YieldCurveShortRateStripSwaps(void *yield_curve_input, void *swap_list, void
 		float *yield_curve_expiry_time = yield_curve->interpolation_times + number_of_already_stripped_fras;
 		float fixed_leg_sum = 0;
 		size_t number_of_known_swap_discount_factors = 0;
-		YieldCurveSwapF *first_swap = (YieldCurveSwapF *)swap_list;
-		YieldCurveSwapF *last_swap = first_swap + number_of_swaps - 1;
+		SwapScheduleF *first_swap = (SwapScheduleF *)swap_list;
+		SwapScheduleF *last_swap = first_swap + number_of_swaps - 1;
 		float last_fra_payment_time = yield_curve->interpolation_times[number_of_already_stripped_fras - 1];
 		float *this_swap_payment_time = first_swap->fixed_payment_times;
 		for (size_t i = 0; i < first_swap->number_of_fixed_payments; ++i) {
@@ -633,7 +673,7 @@ int YieldCurveShortRateStripSwaps(void *yield_curve_input, void *swap_list, void
 		}
 		float last_discount_factor = this_discount_factor;
 		float last_swap_rate = 1;
-		YieldCurveSwapF *this_swap = first_swap;
+		SwapScheduleF *this_swap = first_swap;
 		for (size_t i = 0; i < number_of_swaps; ++i) {
 			this_swap_payment_time = this_swap->fixed_payment_times + this_swap->number_of_fixed_payments - 1;
 			fixed_leg_sum *= *this_swap_rate / last_swap_rate;
@@ -682,8 +722,8 @@ int YieldCurveShortRateStripSwaps(void *yield_curve_input, void *swap_list, void
 		double *yield_curve_expiry_time = yield_curve->interpolation_times + number_of_already_stripped_fras;
 		double fixed_leg_sum = 0;
 		size_t number_of_known_swap_discount_factors = 0;
-		YieldCurveSwapD *first_swap = (YieldCurveSwapD *)swap_list;
-		YieldCurveSwapD *last_swap = first_swap + number_of_swaps - 1;
+		SwapScheduleD *first_swap = (SwapScheduleD *)swap_list;
+		SwapScheduleD *last_swap = first_swap + number_of_swaps - 1;
 		double last_fra_payment_time = yield_curve->interpolation_times[number_of_already_stripped_fras - 1];
 		double *this_swap_payment_time = first_swap->fixed_payment_times;
 		for (size_t i = 0; i < first_swap->number_of_fixed_payments; ++i) {
@@ -702,7 +742,7 @@ int YieldCurveShortRateStripSwaps(void *yield_curve_input, void *swap_list, void
 		}
 		double last_discount_factor = this_discount_factor;
 		double last_swap_rate = 1;
-		YieldCurveSwapD *this_swap = first_swap;
+		SwapScheduleD *this_swap = first_swap;
 		for (size_t i = 0; i < number_of_swaps; ++i) {
 			this_swap_payment_time = this_swap->fixed_payment_times + this_swap->number_of_fixed_payments - 1;
 			fixed_leg_sum *= *this_swap_rate / last_swap_rate;
@@ -758,8 +798,8 @@ int YieldCurveOvernightForwardStripSwaps(void *yield_curve_input, void *swap_lis
 		float *yield_curve_expiry_time = yield_curve->interpolation_times + number_of_already_stripped_fras;
 		float fixed_leg_sum = 0;
 		size_t number_of_known_swap_discount_factors = 0;
-		YieldCurveSwapF *first_swap = (YieldCurveSwapF *)swap_list;
-		YieldCurveSwapF *last_swap = first_swap + number_of_swaps - 1;
+		SwapScheduleF *first_swap = (SwapScheduleF *)swap_list;
+		SwapScheduleF *last_swap = first_swap + number_of_swaps - 1;
 		float last_fra_payment_time = yield_curve->interpolation_times[number_of_already_stripped_fras - 1];
 		float *this_swap_payment_time = first_swap->fixed_payment_times;
 		for (size_t i = 0; i < first_swap->number_of_fixed_payments; ++i) {
@@ -778,7 +818,7 @@ int YieldCurveOvernightForwardStripSwaps(void *yield_curve_input, void *swap_lis
 		}
 		float last_discount_factor = this_discount_factor;
 		float last_swap_rate = 1;
-		YieldCurveSwapF *this_swap = first_swap;
+		SwapScheduleF *this_swap = first_swap;
 		for (size_t i = 0; i < number_of_swaps; ++i) {
 			this_swap_payment_time = this_swap->fixed_payment_times + this_swap->number_of_fixed_payments - 1;
 			fixed_leg_sum *= *this_swap_rate / last_swap_rate;
@@ -828,8 +868,8 @@ int YieldCurveOvernightForwardStripSwaps(void *yield_curve_input, void *swap_lis
 		double *yield_curve_expiry_time = yield_curve->interpolation_times + number_of_already_stripped_fras;
 		double fixed_leg_sum = 0;
 		size_t number_of_known_swap_discount_factors = 0;
-		YieldCurveSwapD *first_swap = (YieldCurveSwapD *)swap_list;
-		YieldCurveSwapD *last_swap = first_swap + number_of_swaps - 1;
+		SwapScheduleD *first_swap = (SwapScheduleD *)swap_list;
+		SwapScheduleD *last_swap = first_swap + number_of_swaps - 1;
 		double last_fra_payment_time = yield_curve->interpolation_times[number_of_already_stripped_fras - 1];
 		double *this_swap_payment_time = first_swap->fixed_payment_times;
 		for (size_t i = 0; i < first_swap->number_of_fixed_payments; ++i) {
@@ -848,7 +888,7 @@ int YieldCurveOvernightForwardStripSwaps(void *yield_curve_input, void *swap_lis
 		}
 		double last_discount_factor = this_discount_factor;
 		double last_swap_rate = 1;
-		YieldCurveSwapD *this_swap = first_swap;
+		SwapScheduleD *this_swap = first_swap;
 		for (size_t i = 0; i < number_of_swaps; ++i) {
 			this_swap_payment_time = this_swap->fixed_payment_times + this_swap->number_of_fixed_payments - 1;
 			fixed_leg_sum *= *this_swap_rate / last_swap_rate;

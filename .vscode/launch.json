@@ -17,10 +17,10 @@
 			"type": "lldb",
 			"request": "launch",
 			"name": "Debug tests",
-			"program": "${workspaceFolder}/tests",
+			"program": "${workspaceFolder}/debug/tests.out",
 			"args": [],
-			"cwd": "${workspaceFolder}",
-			"preLaunchTask": "Clang build tests debug",
+			"cwd": "${workspaceFolder}/debug/",
+			"preLaunchTask": "Run debug build script",
 		},
 
 		{
