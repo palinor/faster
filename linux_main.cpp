@@ -114,12 +114,12 @@ int main(int, char**)
 
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
-	size_t number_of_fras = 8;
-	size_t number_of_swaps = 5;
-	size_t number_of_plot_points = 200;
-	size_t number_of_cms = 5;
+	uint number_of_fras = 8;
+	uint number_of_swaps = 5;
+	uint number_of_plot_points = 200;
+	uint number_of_cms = 5;
 	float cms_maturity = 10;
-	size_t number_of_strikes = 200;
+	uint number_of_strikes = 200;
 	float floater_width = 200;
 	DisplayData data;
 	displayDataInit(&data, number_of_fras, number_of_swaps, number_of_plot_points, number_of_cms, number_of_strikes, cms_maturity, floater_width);
@@ -178,6 +178,7 @@ int main(int, char**)
     ImGui_ImplGlfw_Shutdown();
     ImPlot::DestroyContext();
     ImGui::DestroyContext();
+    displayDataFree(&data);
 
     glfwDestroyWindow(window);
     glfwTerminate();

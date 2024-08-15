@@ -67,7 +67,7 @@ bool operator>=(Date &date_1, Date &date_2) {
 	if (date_1.year != date_2.year) {
 		return date_1.year > date_2.year;
 	}
-	if (date_2.month != date_2.month) {
+	if (date_1.month != date_2.month) {
 		return date_1.month > date_2.month;
 	}
 	return date_1.day >= date_2.day;
