@@ -17,10 +17,10 @@
 				"-pedantic",
 				"-DEBUG",
 				"-std=gnu++20",
-				"-L/Users/aionfeehan/anaconda3/lib",
+				"-L/home/kuzco/tools/anaconda3/lib",
 				"-lcurl",
-				"-rpath ",
-				"/Users/aionfeehan/anaconda3/lib",
+				"-rpath",
+				"/home/kuzco/tools/anaconda3/lib",
 				// "-pthread"
 			],
 			"options": {
@@ -30,6 +30,46 @@
 				"$gcc"
 			],
 			"group": "build",
+			"detail": "compiler: /usr/bin/clang++"
+		},
+
+		{
+			"type": "cppbuild",
+			"label": "Clang build debug linux_main",
+			"command": "/usr/bin/clang++",
+			"args": [
+				"-fcolor-diagnostics",
+				"-fansi-escape-codes",
+				"-g",
+				"linux_main.cpp",
+				"-o",
+				"linux_main",
+				"-Wall",
+				"-Wextra",
+				"-pedantic",
+				"-DEBUG",
+				"-std=gnu++20",
+				"-L/home/kuzco/tools/anaconda3/lib",
+				"-lcurl",
+				"-rpath",
+				"/home/kuzco/tools/anaconda3/lib",
+				"--include-directory",
+				"${workspaceFolder}/imgui",
+				"--include-directory",
+				"${workspaceFolder}/imgui/backends",
+				"-lglfw"
+				// "-pthread"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
 			"detail": "compiler: /usr/bin/clang++"
 		},
 
@@ -76,10 +116,10 @@
 				"${workspaceFolder}/imgui/",
 				"--include-directory",
 				"${workspaceFolder}/imgui/backends/",
-				"-L/Users/aionfeehan/anaconda3/lib",
+				"-L/home/kuzco/tools/anaconda3/lib",
 				"-lcurl",
-				"-rpath ",
-				"/Users/aionfeehan/anaconda3/lib",
+				"-rpath",
+				"/home/kuzco/tools/anaconda3/lib",
 				// "-Rpass=loop-vectorize",
 				// "-pthread"
 			],
@@ -219,7 +259,7 @@
 			},
 			"group": {
 				"kind": "build",
-				"isDefault": true
+				"isDefault": false
 			}
 		},
 

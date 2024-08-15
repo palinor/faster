@@ -36,11 +36,11 @@
 		{
 			"type": "cppdbg",
 			"request": "launch",
-			"name": "Debug default",
+			"name": "Debug linux_main",
 			"program": "${workspaceFolder}/linux_main",
 			"args": [],
 			"cwd": "${workspaceFolder}",
-			"preLaunchTask": "Clang build debug"
+			"preLaunchTask": "Clang build debug linux_main"
 		}
 	]
 }
