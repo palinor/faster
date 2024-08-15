@@ -20,12 +20,12 @@
 
 struct DisplayData {
 
-	size_t number_of_fras = 8;
-	size_t number_of_swaps = 5;
-	size_t number_of_plot_points = 200;
+	uint number_of_fras = 8;
+	uint number_of_swaps = 5;
+	uint number_of_plot_points = 200;
 	void *yield_curve = {};
 
-	YieldCurveSwapF *swap_list = nullptr;
+	Swap *swap_list = nullptr;
 	float *plot_maturities = nullptr;
 	float *plot_short_rates = nullptr;
 	float *plot_overnight_forwards = nullptr;
@@ -36,8 +36,8 @@ struct DisplayData {
 	float *swap_rates = nullptr;
 	float *forward_starting_swap_rates = nullptr;
 
-	size_t number_of_cms = 5;
-	size_t number_of_strikes = 5;
+	uint number_of_cms = 5;
+	uint number_of_strikes = 5;
 	OptionModelParametersShiftedSabrFloat *shifted_sabr_params = nullptr;
 	float *strikes = nullptr;
 	float *normal_vols = nullptr;
@@ -54,11 +54,11 @@ struct DisplayData {
 
 void displayDataInit(
 	DisplayData *data,
-	size_t number_of_fras,
-	size_t number_of_swaps,
-	size_t number_of_plot_points,
-	size_t number_of_cms,
-	size_t number_of_strikes,
+	uint number_of_fras,
+	uint number_of_swaps,
+	uint number_of_plot_points,
+	uint number_of_cms,
+	uint number_of_strikes,
 	float cms_maturity,
 	float slider_width
 ) {
@@ -67,6 +67,7 @@ void displayDataInit(
 	data->number_of_plot_points = number_of_plot_points;
 	data->number_of_strikes = number_of_strikes;
 	data->cms_maturity = cms_maturity;
+	data->slider_width = slider_width;
 	data->fra_times_to_maturity = (float *)malloc(number_of_fras * sizeof(float));
 	data->forward_rates = (float *)malloc(number_of_fras * sizeof(float));
 	data->swap_fixed_payment_schedule = (float *)calloc(number_of_swaps, sizeof(float));
@@ -89,7 +90,7 @@ void displayDataInit(
 	data->shifted_sabr_params->zeta = 0.03;
 
 
-	for (size_t i = 0; i < number_of_fras; ++i) {
+	for (uint i = 0; i < number_of_fras; ++i) {
 		data->fra_times_to_maturity[i] = 0.25 * (i + 1);
 		data->forward_rates[i] = 0.05 + i * 0.005;
 	}
@@ -99,28 +100,39 @@ void displayDataInit(
 	data->swap_fixed_payment_schedule[3] = 15;
 	data->swap_fixed_payment_schedule[4] = 30;
 
-	for (size_t i = 0; i < number_of_swaps; ++i) {
+	for (uint i = 0; i < number_of_swaps; ++i) {
 		data->swap_rates[i] = 0.05 + i * 0.01;
 	}
 
-	for (size_t i = 0; i < number_of_cms; ++i) {
+	for (uint i = 0; i < number_of_cms; ++i) {
 		data->times_to_maturity[i] = (1 + static_cast<float>(i)) * 5;
 	}
 
-	data->swap_list = (YieldCurveSwapF *)calloc(number_of_swaps, sizeof(YieldCurveSwapF));
-	for (size_t i = 0; i < number_of_swaps; ++i) {
-		size_t number_fixed_payments = (size_t)(*(data->swap_fixed_payment_schedule + i));
-		size_t number_floating_payments = 10;
-		YieldCurveSwapFInit(data->swap_list + i, number_fixed_payments, number_floating_payments, data->swap_rates[i]);
+	data->swap_list = (Swap *)calloc(number_of_swaps, sizeof(Swap));
+	for (uint i = 0; i < number_of_swaps; ++i) {
+		uint number_fixed_payments = (uint)(*(data->swap_fixed_payment_schedule + i));
+		uint number_floating_payments = 10;
+		SwapScheduleF *schedule = (SwapScheduleF *)calloc(1, sizeof(SwapScheduleF));
+		data->swap_list[i].schedule = schedule;
+		SwapScheduleInitF(
+			schedule,
+			number_fixed_payments,
+			number_floating_payments,
+			data->swap_rates[i]
+		);
 	}
 
 	float *this_strike = data->strikes;
-	for (size_t i = 0; i < data->number_of_strikes; ++i) {
+	for (uint i = 0; i < data->number_of_strikes; ++i) {
 		*this_strike++ = -0.01 + i * 0.001;
 	}
 }
 
 void displayDataFree(DisplayData *data) {
+	Swap *this_swap = data->swap_list;
+	for (uint i = 0; i < data->number_of_swaps; ++i) {
+		free((this_swap++)->schedule);
+	}
 	free(data->swap_list);
 	free(data->plot_maturities);
 	free(data->plot_short_rates);
@@ -210,9 +222,15 @@ void imGuiRenderLoop(DisplayData *data) {
 		int number_fixed_payments = (int)(*this_swap_maturity);
 		ImGui::SameLine();
 		ImGui::SliderFloat(swap_rate_label, this_swap_rate, -0.02, 0.2);
-		data->swap_list[swap_idx].swap_rate = *(data->swap_rates + swap_idx);
+		SwapScheduleF *schedule = (SwapScheduleF *)data->swap_list[swap_idx].schedule;
+		schedule->fixed_rate = *(data->swap_rates + swap_idx);
 		minimal_swap_maturity = data->swap_fixed_payment_schedule[swap_idx];
-		YieldCurveSwapFInit(data->swap_list + swap_idx, number_fixed_payments, 10, *this_swap_rate++);
+		SwapScheduleInitF(
+			data->swap_list[swap_idx].schedule,
+			number_fixed_payments,
+			10,
+			*this_swap_rate++
+		);
 		++this_swap_maturity;
 	}
 
@@ -240,7 +258,7 @@ void imGuiRenderLoop(DisplayData *data) {
 		float plot_maturity_step = (last_maturity_time - first_maturity_time) / ((float)(data->number_of_plot_points));
 		float log_discount_factor = 0;
 		float plot_maturity_step_in_days = plot_maturity_step * 365;
-		for (size_t i = 0; i < data->number_of_plot_points; ++i) {
+		for (uint i = 0; i < data->number_of_plot_points; ++i) {
 			if (this_maturity_time > *this_yield_curve_maturity_time) {
 				++this_yield_curve_maturity_time;
 				++this_short_rate;
@@ -275,7 +293,7 @@ void imGuiRenderLoop(DisplayData *data) {
 		float last_maturity_time = yield_curve->interpolation_times[yield_curve->number_of_points - 1];
 		float plot_maturity_step = (last_maturity_time - first_maturity_time) / ((float)(data->number_of_plot_points));
 		float discount_factor = 1;
-		for (size_t i = 0; i < data->number_of_plot_points; ++i) {
+		for (uint i = 0; i < data->number_of_plot_points; ++i) {
 			this_maturity_time += plot_maturity_step;
 			if (this_maturity_time > *this_yield_curve_maturity_time) {
 				++this_yield_curve_maturity_time;
@@ -294,40 +312,40 @@ void imGuiRenderLoop(DisplayData *data) {
 	ImGui::Begin("Smile input data");
 
 	char parameter_label[32];
-	snprintf(parameter_label, (size_t)32, "Sigma0");
+	snprintf(parameter_label, (uint)32, "Sigma0");
 	ImGui::PushItemWidth(data->slider_width);
 	ImGui::SliderFloat(parameter_label, &(data->shifted_sabr_params->sigma_0), 0.0001, 1.5);
 
-	snprintf(parameter_label, (size_t)32, "Alpha");
+	snprintf(parameter_label, (uint)32, "Alpha");
 	ImGui::PushItemWidth(data->slider_width);
 	ImGui::SliderFloat(parameter_label, &(data->shifted_sabr_params->alpha), 0.0001, 1.5);
 
-	snprintf(parameter_label, (size_t)32, "Beta");
+	snprintf(parameter_label, (uint)32, "Beta");
 	ImGui::PushItemWidth(data->slider_width);
 	ImGui::SliderFloat(parameter_label, &(data->shifted_sabr_params->beta), 0.0001, 0.99);
 
-	snprintf(parameter_label, (size_t)32, "Rho");
+	snprintf(parameter_label, (uint)32, "Rho");
 	ImGui::PushItemWidth(data->slider_width);
 	ImGui::SliderFloat(parameter_label, &(data->shifted_sabr_params->rho), -0.8, 0.8);
 
-	snprintf(parameter_label, (size_t)32, "Zeta");
+	snprintf(parameter_label, (uint)32, "Zeta");
 	ImGui::PushItemWidth(data->slider_width);
 	ImGui::SliderFloat(parameter_label, &(data->shifted_sabr_params->zeta), 0.0001, 0.1);
 
 	float *this_strike = data->strikes;
-	for (size_t i = 0; i < data->number_of_strikes; ++i) {
+	for (uint i = 0; i < data->number_of_strikes; ++i) {
 		*this_strike++ = -0.01 + i * 0.001;
 	}
 	float *this_time_to_maturity = data->times_to_maturity;
 	float *this_cms_value = data->cms_values;
 	float *this_forward_swap_rate = data->forward_starting_swap_rates;
-	for (size_t i = 0; i < data->number_of_cms; ++i) {
+	for (uint i = 0; i < data->number_of_cms; ++i) {
 		float df;
 		DiscountFactorSpotFromYieldCurve(&df, data->yield_curve, this_time_to_maturity);
 		float forward = SwapRateYieldCurveF(data->yield_curve, *this_time_to_maturity, data->cms_maturity, 1, 1);
 		float *this_smile = data->normal_vols + data->number_of_strikes * i;
 		float *this_strike = data->strikes;
-		for (size_t k = 0; k < data->number_of_strikes; ++k) {
+		for (uint k = 0; k < data->number_of_strikes; ++k) {
 			*(this_smile + k) = ShiftedSabrImpliedNormalVol(
 				forward,
 				*this_strike++,
@@ -347,8 +365,8 @@ void imGuiRenderLoop(DisplayData *data) {
 	ImGui::Begin("Options model");
 	if (ImPlot::BeginPlot("Smiles")) {
 		char maturity_label[32];
-		for (size_t i = 0; i < data->number_of_cms; ++i) {
-			snprintf(maturity_label, (size_t)32, "%i Y", static_cast<int>(data->times_to_maturity[i]));
+		for (uint i = 0; i < data->number_of_cms; ++i) {
+			snprintf(maturity_label, (uint)32, "%i Y", static_cast<int>(data->times_to_maturity[i]));
 			ImPlot::PlotLine(maturity_label, data->strikes, data->normal_vols + i * data->number_of_strikes, data->number_of_strikes);
 		}
 		ImPlot::EndPlot();
@@ -358,8 +376,8 @@ void imGuiRenderLoop(DisplayData *data) {
 	ImGui::Begin("Forward looking");
 	char cms_label[32];
 	char forward_swap_label[32];
-	snprintf(cms_label, (size_t)32, "%i Y CMS", (int)(data->cms_maturity));
-	snprintf(forward_swap_label, (size_t)32, "%i Y Forward swap", (int)(data->cms_maturity));
+	snprintf(cms_label, (uint)32, "%i Y CMS", (int)(data->cms_maturity));
+	snprintf(forward_swap_label, (uint)32, "%i Y Forward swap", (int)(data->cms_maturity));
 	if (ImPlot::BeginPlot("Forward swaps and CMS")) {
 		ImPlot::PlotLine(cms_label, data->times_to_maturity, data->cms_values, data->number_of_cms);
 		ImPlot::PlotLine(forward_swap_label, data->times_to_maturity, data->forward_starting_swap_rates, data->number_of_cms);
