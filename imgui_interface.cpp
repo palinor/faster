@@ -24,6 +24,7 @@ struct DisplayData {
 	uint number_of_swaps = 5;
 	uint number_of_plot_points = 200;
 	void *yield_curve = {};
+	Arena *arena;
 
 	Swap *swap_list = nullptr;
 	float *plot_maturities = nullptr;
@@ -60,28 +61,33 @@ void displayDataInit(
 	uint number_of_cms,
 	uint number_of_strikes,
 	float cms_maturity,
-	float slider_width
+	float slider_width,
+	Arena *arena
 ) {
+	if (!arena) {
+		arena = ArenaAllocateDefault();
+	}
+	data->arena = arena;
 	data->number_of_fras = number_of_fras;
 	data->number_of_swaps = number_of_swaps;
 	data->number_of_plot_points = number_of_plot_points;
 	data->number_of_strikes = number_of_strikes;
 	data->cms_maturity = cms_maturity;
 	data->slider_width = slider_width;
-	data->fra_times_to_maturity = (float *)malloc(number_of_fras * sizeof(float));
-	data->forward_rates = (float *)malloc(number_of_fras * sizeof(float));
-	data->swap_fixed_payment_schedule = (float *)calloc(number_of_swaps, sizeof(float));
-	data->swap_rates = (float *)malloc(number_of_swaps * sizeof(float));
-	data->forward_starting_swap_rates = (float *)malloc(number_of_cms * sizeof(float));
-	data->plot_maturities = (float *)calloc(number_of_plot_points, sizeof(float));
-	data->plot_short_rates = (float *)calloc(number_of_plot_points, sizeof(float));
-	data->plot_discount_factors = (float *)calloc(number_of_plot_points, sizeof(float));
-	data->plot_overnight_forwards = (float *)calloc(number_of_plot_points, sizeof(float));
-	data->strikes = (float *)malloc(number_of_strikes * sizeof(float));
-	data->times_to_maturity = (float *)malloc(number_of_strikes * sizeof(float));
-	data->cms_values = (float *)malloc(number_of_strikes * sizeof(float));
-	data->normal_vols = (float *)malloc(number_of_strikes * number_of_cms * sizeof(float));
-	data->shifted_sabr_params = (OptionModelParametersShiftedSabrFloat *)malloc(sizeof(OptionModelParametersShiftedSabrFloat));
+	data->fra_times_to_maturity = (float *)ArenaGetMemory(number_of_fras * sizeof(float), arena);
+	data->forward_rates = (float *)ArenaGetMemory(number_of_fras * sizeof(float), arena);
+	data->swap_fixed_payment_schedule = (float *)ArenaGetMemory(number_of_swaps * sizeof(float), arena);
+	data->swap_rates = (float *)ArenaGetMemory(number_of_swaps * sizeof(float), arena);
+	data->forward_starting_swap_rates = (float *)ArenaGetMemory(number_of_cms * sizeof(float), arena);
+	data->plot_maturities = (float *)ArenaGetMemory(number_of_plot_points * sizeof(float), arena);
+	data->plot_short_rates = (float *)ArenaGetMemory(number_of_plot_points * sizeof(float), arena);
+	data->plot_discount_factors = (float *)ArenaGetMemory(number_of_plot_points * sizeof(float), arena);
+	data->plot_overnight_forwards = (float *)ArenaGetMemory(number_of_plot_points * sizeof(float), arena);
+	data->strikes = (float *)ArenaGetMemory(number_of_strikes * sizeof(float), arena);
+	data->times_to_maturity = (float *)ArenaGetMemory(number_of_strikes * sizeof(float), arena);
+	data->cms_values = (float *)ArenaGetMemory(number_of_strikes * sizeof(float), arena);
+	data->normal_vols = (float *)ArenaGetMemory(number_of_strikes * number_of_cms * sizeof(float), arena);
+	data->shifted_sabr_params = (OptionModelParametersShiftedSabrFloat *)ArenaGetMemory(sizeof(OptionModelParametersShiftedSabrFloat), arena);
 
 	data->shifted_sabr_params->sigma_0 = 0.03;
 	data->shifted_sabr_params->alpha = 0.22;
@@ -108,11 +114,23 @@ void displayDataInit(
 		data->times_to_maturity[i] = (1 + static_cast<float>(i)) * 5;
 	}
 
-	data->swap_list = (Swap *)calloc(number_of_swaps, sizeof(Swap));
+	uint number_of_stripping_instruments = number_of_swaps + number_of_fras;
+	data->yield_curve = ArenaGetMemory(sizeof(YieldCurveShortRateFloat), arena);
+	YieldCurveInit(
+		data->yield_curve, 
+		YieldCurveType::SHORT_RATE, 
+		Precision::FLOAT, 
+		number_of_stripping_instruments,
+		arena
+	);
+
+	data->swap_list = (Swap *)ArenaGetMemory(number_of_swaps * sizeof(Swap), arena);
 	for (uint i = 0; i < number_of_swaps; ++i) {
 		uint number_fixed_payments = (uint)(*(data->swap_fixed_payment_schedule + i));
 		uint number_floating_payments = 10;
-		SwapScheduleF *schedule = (SwapScheduleF *)calloc(1, sizeof(SwapScheduleF));
+		SwapScheduleF *schedule = (SwapScheduleF *)ArenaGetMemory(sizeof(SwapScheduleF), arena);
+		schedule->fixed_payment_times = (float *)ArenaGetMemory(number_fixed_payments * sizeof(float), arena);
+		schedule->floating_payment_times = (float *)ArenaGetMemory(number_floating_payments * sizeof(float), arena);
 		data->swap_list[i].schedule = schedule;
 		SwapScheduleInitF(
 			schedule,
@@ -126,27 +144,6 @@ void displayDataInit(
 	for (uint i = 0; i < data->number_of_strikes; ++i) {
 		*this_strike++ = -0.01 + i * 0.001;
 	}
-}
-
-void displayDataFree(DisplayData *data) {
-	Swap *this_swap = data->swap_list;
-	for (uint i = 0; i < data->number_of_swaps; ++i) {
-		free((this_swap++)->schedule);
-	}
-	free(data->swap_list);
-	free(data->plot_maturities);
-	free(data->plot_short_rates);
-	free(data->fra_times_to_maturity);
-	free(data->forward_rates);
-	free(data->swap_fixed_payment_schedule);
-	free(data->swap_rates);
-	free(data->forward_starting_swap_rates);
-	free(data->plot_overnight_forwards);
-	free(data->strikes);
-	free(data->cms_values);
-	free(data->times_to_maturity);
-	free(data->normal_vols);
-	free(data->shifted_sabr_params);
 }
 
 
@@ -186,16 +183,11 @@ void imGuiRenderLoop(DisplayData *data) {
 
 	if (model_is_selected[0]) {
 		data->curve_type = DisplayData::SHORT_RATE;
-	}
-	else if (model_is_selected[1]) {
+	} else if (model_is_selected[1]) {
 		data->curve_type = DisplayData::OVERNIGHT_FORWARD;
 	}
 
-	if (!(data->yield_curve)) {
-		data->yield_curve = calloc(1, sizeof(YieldCurveShortRateFloat));
-	}
-
-	for (int fra_idx = 0; fra_idx < data->number_of_fras; ++fra_idx) {
+	for (uint fra_idx = 0; fra_idx < data->number_of_fras; ++fra_idx) {
 
 		char fra_end_label[32];
 		char forward_rate_label[32];
@@ -211,7 +203,7 @@ void imGuiRenderLoop(DisplayData *data) {
 	float *this_swap_maturity = data->swap_fixed_payment_schedule;
 	float *this_swap_rate = data->swap_rates;
 
-	for (int swap_idx = 0; swap_idx < data->number_of_swaps; ++swap_idx) {
+	for (uint swap_idx = 0; swap_idx < data->number_of_swaps; ++swap_idx) {
 		char swap_end_label[32];
 		char swap_rate_label[32];
 		snprintf(swap_end_label, (int)32, "Swap %i end", swap_idx + 1);
@@ -257,7 +249,6 @@ void imGuiRenderLoop(DisplayData *data) {
 		float last_maturity_time = yield_curve->interpolation_times[yield_curve->number_of_points - 1];
 		float plot_maturity_step = (last_maturity_time - first_maturity_time) / ((float)(data->number_of_plot_points));
 		float log_discount_factor = 0;
-		float plot_maturity_step_in_days = plot_maturity_step * 365;
 		for (uint i = 0; i < data->number_of_plot_points; ++i) {
 			if (this_maturity_time > *this_yield_curve_maturity_time) {
 				++this_yield_curve_maturity_time;
@@ -342,7 +333,7 @@ void imGuiRenderLoop(DisplayData *data) {
 	for (uint i = 0; i < data->number_of_cms; ++i) {
 		float df;
 		DiscountFactorSpotFromYieldCurve(&df, data->yield_curve, this_time_to_maturity);
-		float forward = SwapRateYieldCurveF(data->yield_curve, *this_time_to_maturity, data->cms_maturity, 1, 1);
+		float forward = SwapRateYieldCurveF(data->yield_curve, *this_time_to_maturity, data->cms_maturity, 1);
 		float *this_smile = data->normal_vols + data->number_of_strikes * i;
 		float *this_strike = data->strikes;
 		for (uint k = 0; k < data->number_of_strikes; ++k) {

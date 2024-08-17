@@ -122,7 +122,7 @@ int main(int, char**)
 	uint number_of_strikes = 200;
 	float floater_width = 200;
 	DisplayData data;
-	displayDataInit(&data, number_of_fras, number_of_swaps, number_of_plot_points, number_of_cms, number_of_strikes, cms_maturity, floater_width);
+	displayDataInit(&data, number_of_fras, number_of_swaps, number_of_plot_points, number_of_cms, number_of_strikes, cms_maturity, floater_width, nullptr);
 
     // Main loop
 #ifdef __EMSCRIPTEN__
@@ -178,7 +178,7 @@ int main(int, char**)
     ImGui_ImplGlfw_Shutdown();
     ImPlot::DestroyContext();
     ImGui::DestroyContext();
-    displayDataFree(&data);
+    ArenaDeallocate(data.arena);
 
     glfwDestroyWindow(window);
     glfwTerminate();
