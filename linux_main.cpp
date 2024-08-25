@@ -58,7 +58,7 @@ int main(int, char**)
 #endif
 
     // Create window with graphics context
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Dear ImGui GLFW+OpenGL3 example", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "Faster", nullptr, nullptr);
     if (window == nullptr)
         return 1;
     glfwMakeContextCurrent(window);
@@ -120,9 +120,27 @@ int main(int, char**)
 	uint number_of_cms = 5;
 	float cms_maturity = 10;
 	uint number_of_strikes = 200;
-	float floater_width = 200;
+	float slider_width = 200;
+    uint number_of_expiries = 10;
+    uint number_of_underlyings = 12;
+    float times_to_expiry[] = {0.25, 0.5, 0.75, 1, 2, 5, 10, 15, 20, 30};
+    float underlying_lengths[] = {0.25, 0.5, 0.75, 1, 2, 5, 10, 15, 20, 25, 30, 40};
 	DisplayData data;
-	displayDataInit(&data, number_of_fras, number_of_swaps, number_of_plot_points, number_of_cms, number_of_strikes, cms_maturity, floater_width, nullptr);
+	displayDataInit(
+        &data,
+        number_of_fras,
+        number_of_swaps,
+        number_of_plot_points,
+        number_of_cms,
+        number_of_strikes,
+        number_of_expiries,
+        number_of_underlyings,
+        times_to_expiry,
+        underlying_lengths,
+        cms_maturity,
+        slider_width,
+        nullptr 
+    );
 
     // Main loop
 #ifdef __EMSCRIPTEN__

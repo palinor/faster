@@ -30,13 +30,79 @@ struct OptionModelHeader {
 };
 
 struct OptionModelParametersShiftedSabrFloat{
-	OptionModelHeader *model_header;
+	OptionModelHeader model_header;
 	float sigma_0;
 	float alpha;
 	float beta;
 	float rho;
 	float zeta;
 };
+
+struct ShiftedSabrParamGrid {
+	float *times_to_expiry = nullptr;
+	float *underlying_maturity_length = nullptr;
+	OptionModelParametersShiftedSabrFloat *parameters = nullptr;
+	uint number_of_expiries = 0;
+	uint number_of_underlyings = 0;
+};
+
+void InterpolateShiftedSabrParametersFloat(void *target, float expiry, float underlying_length, ShiftedSabrParamGrid *param_grid){
+	OptionModelHeader *result_header = (OptionModelHeader *)target;
+	OptionModelParametersShiftedSabrFloat *result = (OptionModelParametersShiftedSabrFloat *)target;
+	uint expiry_idx_a = 0;
+	uint expiry_idx_b = 0;
+	uint underlying_idx_a = 0;
+	uint underlying_idx_b = 0;
+	float *this_expiry = param_grid->times_to_expiry;
+	float *this_underlying_length = param_grid->underlying_maturity_length;
+	uint expiry_idx = 0;
+	uint underlying_idx = 0;
+	for (expiry_idx = 0; expiry_idx < param_grid->number_of_expiries; ++expiry_idx) {
+		expiry_idx_b = expiry_idx;
+		if (*this_expiry > expiry) break;
+		++this_expiry;
+		expiry_idx_a = expiry_idx_b;
+	}
+	for (underlying_idx = 0; underlying_idx < param_grid->number_of_underlyings; ++underlying_idx) {
+		underlying_idx_b = underlying_idx;
+		if (*this_underlying_length > underlying_length) break;
+		++this_underlying_length;
+		underlying_idx_a = underlying_idx_b;
+	}
+	OptionModelParametersShiftedSabrFloat *params_expiry_a_underlying_a = param_grid->parameters + expiry_idx_a * param_grid->number_of_underlyings + underlying_idx_a;
+	OptionModelParametersShiftedSabrFloat *params_expiry_a_underlying_b = param_grid->parameters + expiry_idx_a * param_grid->number_of_underlyings + underlying_idx_b;
+	OptionModelParametersShiftedSabrFloat *params_expiry_b_underlying_a = param_grid->parameters + expiry_idx_b * param_grid->number_of_underlyings + underlying_idx_a;
+	OptionModelParametersShiftedSabrFloat *params_expiry_b_underlying_b = param_grid->parameters + expiry_idx_b * param_grid->number_of_underlyings + underlying_idx_b;
+
+	result_header->vol_type = params_expiry_a_underlying_a->model_header.vol_type;
+	result_header->model_type = params_expiry_a_underlying_a->model_header.model_type;
+	float expiry_time_a = param_grid->times_to_expiry[expiry_idx_a];
+	float expiry_time_b = param_grid->times_to_expiry[expiry_idx_b];
+	float underlying_length_a = param_grid->underlying_maturity_length[underlying_idx_a];
+	float underlying_length_b = param_grid->underlying_maturity_length[underlying_idx_b];
+	float underlying_interpolation_coefficient = underlying_idx_a == underlying_idx_b ? 0 : (underlying_length - underlying_length_a) / (underlying_length_b - underlying_length_a);
+	float expiry_interpolation_coefficient = expiry_idx_a == expiry_idx_b ? 0 : (expiry - expiry_time_a) / (expiry_time_b - expiry_time_a);
+
+	float sigma_0_expiry_a = params_expiry_a_underlying_a->sigma_0 + underlying_interpolation_coefficient * params_expiry_a_underlying_b->sigma_0;
+	float sigma_0_expiry_b = params_expiry_b_underlying_a->sigma_0 + underlying_interpolation_coefficient * params_expiry_b_underlying_b->sigma_0;
+	result->sigma_0 = sigma_0_expiry_a + expiry_interpolation_coefficient * sigma_0_expiry_b;	
+	
+	float alpha_expiry_a = params_expiry_a_underlying_a->alpha + underlying_interpolation_coefficient * params_expiry_a_underlying_b->alpha;
+	float alpha_expiry_b = params_expiry_b_underlying_a->alpha + underlying_interpolation_coefficient * params_expiry_b_underlying_b->alpha;
+	result->alpha = alpha_expiry_a + expiry_interpolation_coefficient * alpha_expiry_b;	
+
+	float beta_expiry_a = params_expiry_a_underlying_a->beta + underlying_interpolation_coefficient * params_expiry_a_underlying_b->beta;
+	float beta_expiry_b = params_expiry_b_underlying_a->beta + underlying_interpolation_coefficient * params_expiry_b_underlying_b->beta;
+	result->beta = beta_expiry_a + expiry_interpolation_coefficient * beta_expiry_b;	
+
+	float rho_expiry_a = params_expiry_a_underlying_a->rho + underlying_interpolation_coefficient * params_expiry_a_underlying_b->rho;
+	float rho_expiry_b = params_expiry_b_underlying_a->rho + underlying_interpolation_coefficient * params_expiry_b_underlying_b->rho;
+	result->rho = rho_expiry_a + expiry_interpolation_coefficient * rho_expiry_b;	
+
+	float zeta_expiry_a = params_expiry_a_underlying_a->zeta + underlying_interpolation_coefficient * params_expiry_a_underlying_b->zeta;
+	float zeta_expiry_b = params_expiry_b_underlying_a->zeta + underlying_interpolation_coefficient * params_expiry_b_underlying_b->zeta;
+	result->zeta = zeta_expiry_a + expiry_interpolation_coefficient * zeta_expiry_b;	
+}
 
 float OptionForwardPremiumNormalVol(float normal_vol, float forward, float strike, float time_to_maturity_in_years, OptionType option_type) {
 	const float one_over_sqrt_2pi = 0.3989422804;
@@ -213,10 +279,10 @@ float ShiftedSabrImpliedNormalVol(float forward, float strike, float time_to_mat
 }
 
 
-void ShiftedSabrNormalSmile(float *output_vols, float forward, float *strikes, size_t n_strikes, float time_to_maturity_in_years, OptionModelParametersShiftedSabrFloat *shifted_sabr_params) {
+void ShiftedSabrNormalSmile(float *output_vols, float forward, float *strikes, uint n_strikes, float time_to_maturity_in_years, OptionModelParametersShiftedSabrFloat *shifted_sabr_params) {
 	float *this_output_vol = output_vols;
 	float *this_strike = strikes;
-	for (size_t i = 0; i < n_strikes; ++i) {
+	for (uint i = 0; i < n_strikes; ++i) {
 		*this_output_vol++ = ShiftedSabrImpliedNormalVol(
 			forward,
 			*this_strike++,
@@ -261,16 +327,16 @@ float CmsReplicationIntegralFunction(float strike, float fixed_swap_leg_coverage
 }
 
 
-float CmsReplicationForwardPremium(float forward, float *normal_vols, float *strikes, size_t n_strikes, float time_to_payment_in_years, float fixed_swap_leg_coverage, float cms_maturity_in_years) {
+float CmsReplicationForwardPremium(float forward, float *normal_vols, float *strikes, uint n_strikes, float time_to_payment_in_years, float fixed_swap_leg_coverage, float cms_maturity_in_years) {
 	float cash_level = CashLevel(forward, fixed_swap_leg_coverage, cms_maturity_in_years);
 	float result = forward;
-	size_t number_of_puts = 0;
+	uint number_of_puts = 0;
 	float *this_strike = strikes;
 	if ((*this_strike > forward) || ((*(this_strike + n_strikes - 1)) < forward)) {
 		float starting_strike = forward - 3 * (*normal_vols);
 		float ending_strike = forward + 3 * (*normal_vols);
 		float strike_step = (ending_strike - starting_strike) / ((float)n_strikes);
-		for (size_t strike_idx = 0; strike_idx < n_strikes; ++strike_idx) {
+		for (uint strike_idx = 0; strike_idx < n_strikes; ++strike_idx) {
 			*this_strike++ = starting_strike + (float)strike_step * (float)strike_idx;
 		}
 		this_strike = strikes;
@@ -306,7 +372,7 @@ float CmsReplicationForwardPremium(float forward, float *normal_vols, float *str
 		);
 	float last_put_integration_point = cm_replication_value * last_put_price;
 
-	for (size_t i = 1; i < n_strikes; ++i) {
+	for (uint i = 1; i < n_strikes; ++i) {
 		float cm_function_value = CmsReplicationIntegralFunction(
 				*this_strike,
 				fixed_swap_leg_coverage,

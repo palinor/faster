@@ -38,8 +38,7 @@ struct DisplayData {
 	float *forward_starting_swap_rates = nullptr;
 
 	uint number_of_cms = 5;
-	uint number_of_strikes = 5;
-	OptionModelParametersShiftedSabrFloat *shifted_sabr_params = nullptr;
+	uint number_of_strikes_per_smile = 5;
 	float *strikes = nullptr;
 	float *normal_vols = nullptr;
 	float *times_to_maturity = nullptr;
@@ -51,6 +50,12 @@ struct DisplayData {
 
 	float f = 0.0f;
 	int counter = 0;
+	ShiftedSabrParamGrid shifted_sabr_params = {};
+	bool *smile_is_selected_for_plotting = nullptr;
+	uint expiry_idx = 0;
+	uint underlying_idx = 0;
+	OptionModelParametersShiftedSabrFloat *interpolated_shifted_sabr_parameters = nullptr;
+
 };
 
 void displayDataInit(
@@ -59,7 +64,11 @@ void displayDataInit(
 	uint number_of_swaps,
 	uint number_of_plot_points,
 	uint number_of_cms,
-	uint number_of_strikes,
+	uint number_of_strikes_per_smile,
+	uint number_of_expiries,
+	uint number_of_underlyings,
+	float *times_to_expiry,
+	float *underlying_maturity_length,
 	float cms_maturity,
 	float slider_width,
 	Arena *arena
@@ -71,7 +80,7 @@ void displayDataInit(
 	data->number_of_fras = number_of_fras;
 	data->number_of_swaps = number_of_swaps;
 	data->number_of_plot_points = number_of_plot_points;
-	data->number_of_strikes = number_of_strikes;
+	data->number_of_strikes_per_smile = number_of_strikes_per_smile;
 	data->cms_maturity = cms_maturity;
 	data->slider_width = slider_width;
 	data->fra_times_to_maturity = (float *)ArenaGetMemory(number_of_fras * sizeof(float), arena);
@@ -83,17 +92,40 @@ void displayDataInit(
 	data->plot_short_rates = (float *)ArenaGetMemory(number_of_plot_points * sizeof(float), arena);
 	data->plot_discount_factors = (float *)ArenaGetMemory(number_of_plot_points * sizeof(float), arena);
 	data->plot_overnight_forwards = (float *)ArenaGetMemory(number_of_plot_points * sizeof(float), arena);
-	data->strikes = (float *)ArenaGetMemory(number_of_strikes * sizeof(float), arena);
-	data->times_to_maturity = (float *)ArenaGetMemory(number_of_strikes * sizeof(float), arena);
-	data->cms_values = (float *)ArenaGetMemory(number_of_strikes * sizeof(float), arena);
-	data->normal_vols = (float *)ArenaGetMemory(number_of_strikes * number_of_cms * sizeof(float), arena);
-	data->shifted_sabr_params = (OptionModelParametersShiftedSabrFloat *)ArenaGetMemory(sizeof(OptionModelParametersShiftedSabrFloat), arena);
+	data->times_to_maturity = (float *)ArenaGetMemory(number_of_cms * sizeof(float), arena);
+	data->cms_values = (float *)ArenaGetMemory(number_of_cms * sizeof(float), arena);
+	uint number_of_smiles = number_of_expiries * number_of_underlyings;
+	data->strikes = (float *)ArenaGetMemory(number_of_strikes_per_smile * number_of_smiles * sizeof(float), arena);
+	data->normal_vols = (float *)ArenaGetMemory(number_of_strikes_per_smile * number_of_smiles * sizeof(float), arena);
+	data->smile_is_selected_for_plotting = (bool *)ArenaGetMemory(sizeof(bool) * number_of_smiles, arena);
+	data->shifted_sabr_params.parameters = (OptionModelParametersShiftedSabrFloat *)ArenaGetMemory(sizeof(OptionModelParametersShiftedSabrFloat) * number_of_smiles, arena);
+	data->interpolated_shifted_sabr_parameters = (OptionModelParametersShiftedSabrFloat *)ArenaGetMemory(sizeof(OptionModelParametersShiftedSabrFloat), arena);
+	data->shifted_sabr_params.number_of_expiries = number_of_expiries;
+	data->shifted_sabr_params.number_of_underlyings = number_of_underlyings;
+	data->shifted_sabr_params.times_to_expiry = times_to_expiry;
+	data->shifted_sabr_params.underlying_maturity_length = underlying_maturity_length;
 
-	data->shifted_sabr_params->sigma_0 = 0.03;
-	data->shifted_sabr_params->alpha = 0.22;
-	data->shifted_sabr_params->beta = 0.4;
-	data->shifted_sabr_params->rho = 0.01;
-	data->shifted_sabr_params->zeta = 0.03;
+	const float starting_sigma_0 = 0.03;
+	const float starting_alpha = 0.22;
+	const float starting_beta = 0.4;
+	const float starting_rho = 0.01;
+	const float starting_zeta = 0.03;
+
+	OptionModelParametersShiftedSabrFloat *this_parameter_set = data->shifted_sabr_params.parameters;
+	bool *this_smile_is_selected_for_plotting = data->smile_is_selected_for_plotting;
+	for (uint i = 0; i < number_of_expiries; ++i) {
+		for (uint j = 0; j < number_of_underlyings; ++j) {
+			this_parameter_set->model_header.model_type = OptionModelType::SHIFTED_SABR;
+			this_parameter_set->model_header.vol_type = OptionVolType::NORMAL;
+			this_parameter_set->sigma_0 = starting_sigma_0;
+			this_parameter_set->alpha = starting_alpha;
+			this_parameter_set->beta = starting_beta;
+			this_parameter_set->rho = starting_rho;
+			this_parameter_set->zeta = starting_zeta;
+			++this_parameter_set;
+			*this_smile_is_selected_for_plotting++ = false;
+		}
+	}
 
 
 	for (uint i = 0; i < number_of_fras; ++i) {
@@ -117,9 +149,9 @@ void displayDataInit(
 	uint number_of_stripping_instruments = number_of_swaps + number_of_fras;
 	data->yield_curve = ArenaGetMemory(sizeof(YieldCurveShortRateFloat), arena);
 	YieldCurveInit(
-		data->yield_curve, 
-		YieldCurveType::SHORT_RATE, 
-		Precision::FLOAT, 
+		data->yield_curve,
+		YieldCurveType::SHORT_RATE,
+		Precision::FLOAT,
 		number_of_stripping_instruments,
 		arena
 	);
@@ -140,10 +172,6 @@ void displayDataInit(
 		);
 	}
 
-	float *this_strike = data->strikes;
-	for (uint i = 0; i < data->number_of_strikes; ++i) {
-		*this_strike++ = -0.01 + i * 0.001;
-	}
 }
 
 
@@ -302,63 +330,153 @@ void imGuiRenderLoop(DisplayData *data) {
 
 	ImGui::Begin("Smile input data");
 
+	uint number_of_expiries = data->shifted_sabr_params.number_of_expiries;
+	uint number_of_underlyings = data->shifted_sabr_params.number_of_underlyings;
+	float *expiries = data->shifted_sabr_params.times_to_expiry;
+	float *underlying_tenors = data->shifted_sabr_params.underlying_maturity_length;
+	for (uint i = 0; i < number_of_expiries; ++i) {
+		for (uint j = 0; j < number_of_underlyings; ++j) {
+			float *this_strike = data->strikes + i * data->number_of_strikes_per_smile;
+			float strike_spacing = 0.001f;
+			float forward = SwapRateYieldCurveF(data->yield_curve, expiries[i], underlying_tenors[j], 1);
+			for (uint k = 0; k < data->number_of_strikes_per_smile; ++k) {
+				*this_strike++ = (float)((int)k - (int)data->number_of_strikes_per_smile / 2) * strike_spacing + forward;
+			}
+		}
+	}
+
+	static uint selected_expiry_idx;
+	static uint selected_underlying_idx;
+
+	static ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg;
+	char underlying_label[32];
+	char expiry_label[32];
+	char button_label[32];
+	uint number_of_rows = data->shifted_sabr_params.number_of_expiries;
+	uint number_of_columns = data->shifted_sabr_params.number_of_underlyings;
+
+	OptionModelParametersShiftedSabrFloat *shifted_sabr_params = data->shifted_sabr_params.parameters + selected_expiry_idx * number_of_columns + selected_underlying_idx;
+	if (ImGui::BeginTable("OptionGrid", data->shifted_sabr_params.number_of_underlyings, flags)) {
+		for (uint col_idx = 0; col_idx < number_of_columns; ++col_idx) {
+			snprintf(underlying_label, (uint)32, "%.2fY", data->shifted_sabr_params.underlying_maturity_length[col_idx]);
+			ImGui::TableSetupColumn(underlying_label);
+		}
+		ImGui::TableHeadersRow();
+
+		bool *smile_is_selected_for_plotting = data->smile_is_selected_for_plotting;
+		for (uint row_idx = 0; row_idx < number_of_rows; ++row_idx) {
+			ImGui::TableNextRow();
+			for (uint col_idx = 0; col_idx < number_of_columns; ++col_idx) {
+				ImGui::TableSetColumnIndex(col_idx);
+				snprintf(
+					button_label,
+					(uint)32,
+					"%.2fY%.2fY",
+					data->shifted_sabr_params.times_to_expiry[row_idx],
+					data->shifted_sabr_params.underlying_maturity_length[col_idx]
+				);
+				if (ImGui::Button(button_label, ImVec2(-FLT_MIN, 0.0f))) {
+					selected_expiry_idx = row_idx;
+					selected_underlying_idx = col_idx;
+					*smile_is_selected_for_plotting = !*smile_is_selected_for_plotting++;
+				}
+			}
+		}
+		ImGui::EndTable();
+	}
+
+
+	snprintf(expiry_label, (uint)32, "%.2fY%.2fY", data->shifted_sabr_params.times_to_expiry[selected_expiry_idx], data->shifted_sabr_params.underlying_maturity_length[selected_underlying_idx]);
+	ImGui::Text(expiry_label);
 	char parameter_label[32];
 	snprintf(parameter_label, (uint)32, "Sigma0");
 	ImGui::PushItemWidth(data->slider_width);
-	ImGui::SliderFloat(parameter_label, &(data->shifted_sabr_params->sigma_0), 0.0001, 1.5);
+	ImGui::SliderFloat(parameter_label, &(shifted_sabr_params->sigma_0), 0.0001, 1.5);
 
 	snprintf(parameter_label, (uint)32, "Alpha");
 	ImGui::PushItemWidth(data->slider_width);
-	ImGui::SliderFloat(parameter_label, &(data->shifted_sabr_params->alpha), 0.0001, 1.5);
+	ImGui::SliderFloat(parameter_label, &(shifted_sabr_params->alpha), 0.0001, 1.5);
 
 	snprintf(parameter_label, (uint)32, "Beta");
 	ImGui::PushItemWidth(data->slider_width);
-	ImGui::SliderFloat(parameter_label, &(data->shifted_sabr_params->beta), 0.0001, 0.99);
+	ImGui::SliderFloat(parameter_label, &(shifted_sabr_params->beta), 0.0001, 0.99);
 
 	snprintf(parameter_label, (uint)32, "Rho");
 	ImGui::PushItemWidth(data->slider_width);
-	ImGui::SliderFloat(parameter_label, &(data->shifted_sabr_params->rho), -0.8, 0.8);
+	ImGui::SliderFloat(parameter_label, &(shifted_sabr_params->rho), -0.8, 0.8);
 
 	snprintf(parameter_label, (uint)32, "Zeta");
 	ImGui::PushItemWidth(data->slider_width);
-	ImGui::SliderFloat(parameter_label, &(data->shifted_sabr_params->zeta), 0.0001, 0.1);
+	ImGui::SliderFloat(parameter_label, &(shifted_sabr_params->zeta), 0.0001, 0.1);
 
-	float *this_strike = data->strikes;
-	for (uint i = 0; i < data->number_of_strikes; ++i) {
-		*this_strike++ = -0.01 + i * 0.001;
-	}
 	float *this_time_to_maturity = data->times_to_maturity;
 	float *this_cms_value = data->cms_values;
 	float *this_forward_swap_rate = data->forward_starting_swap_rates;
-	for (uint i = 0; i < data->number_of_cms; ++i) {
+	OptionModelParametersShiftedSabrFloat *interpolated_parameters = (OptionModelParametersShiftedSabrFloat *)data->interpolated_shifted_sabr_parameters;
+	for (uint i = 0; i < number_of_rows; ++i) {
 		float df;
 		DiscountFactorSpotFromYieldCurve(&df, data->yield_curve, this_time_to_maturity);
 		float forward = SwapRateYieldCurveF(data->yield_curve, *this_time_to_maturity, data->cms_maturity, 1);
-		float *this_smile = data->normal_vols + data->number_of_strikes * i;
-		float *this_strike = data->strikes;
-		for (uint k = 0; k < data->number_of_strikes; ++k) {
+		float *this_smile = data->normal_vols + data->number_of_strikes_per_smile * i;
+		float *this_strike = data->strikes + data->number_of_strikes_per_smile * i;
+		InterpolateShiftedSabrParametersFloat(interpolated_parameters, *this_time_to_maturity, data->cms_maturity, &(data->shifted_sabr_params));
+		for (uint k = 0; k < data->number_of_strikes_per_smile; ++k) {
 			*(this_smile + k) = ShiftedSabrImpliedNormalVol(
 				forward,
 				*this_strike++,
 				*this_time_to_maturity,
-				data->shifted_sabr_params->sigma_0,
-				data->shifted_sabr_params->alpha,
-				data->shifted_sabr_params->beta,
-				data->shifted_sabr_params->rho,
-				data->shifted_sabr_params->zeta
+				interpolated_parameters->sigma_0,
+				interpolated_parameters->alpha,
+				interpolated_parameters->beta,
+				interpolated_parameters->rho,
+				interpolated_parameters->zeta
 			);
 		}
 		*this_forward_swap_rate++ = forward;
-		*this_cms_value++ = CmsReplicationForwardPremium(forward, this_smile, data->strikes, data->number_of_strikes, *this_time_to_maturity++, 1, data->cms_maturity);
+		*this_cms_value++ = CmsReplicationForwardPremium(
+			forward,
+			this_smile,
+			data->strikes + data->number_of_strikes_per_smile * i,
+			data->number_of_strikes_per_smile,
+			*this_time_to_maturity++,
+			1,
+			data->cms_maturity
+		);
 	}
 	ImGui::End();
 
 	ImGui::Begin("Options model");
 	if (ImPlot::BeginPlot("Smiles")) {
 		char maturity_label[32];
+		float *this_time_to_expiry = data->times_to_maturity;
 		for (uint i = 0; i < data->number_of_cms; ++i) {
-			snprintf(maturity_label, (uint)32, "%i Y", static_cast<int>(data->times_to_maturity[i]));
-			ImPlot::PlotLine(maturity_label, data->strikes, data->normal_vols + i * data->number_of_strikes, data->number_of_strikes);
+			snprintf(maturity_label, (uint)32, "%i Y", (int)(*this_time_to_expiry));
+			ImPlot::PlotLine(
+				maturity_label,
+				data->strikes + i * data->number_of_strikes_per_smile,
+				data->normal_vols + i * data->number_of_strikes_per_smile,
+				data->number_of_strikes_per_smile
+			);
+			float forward = SwapRateYieldCurveF(data->yield_curve, *this_time_to_expiry, data->cms_maturity, 1);
+			InterpolateShiftedSabrParametersFloat(
+				interpolated_parameters,
+				*this_time_to_expiry,
+				data->cms_maturity,
+				&(data->shifted_sabr_params)
+			);
+			float atm_vol = ShiftedSabrImpliedNormalVol(
+				forward,
+				forward,
+				*this_time_to_expiry,
+				interpolated_parameters->sigma_0,
+				interpolated_parameters->alpha,
+				interpolated_parameters->beta,
+				interpolated_parameters->rho,
+				interpolated_parameters->zeta
+			);
+			ImPlot::SetNextMarkerStyle(ImPlotMarker_Cross, -1, ImVec4(0, 0, 0, -1), 10);
+			ImPlot::PlotLine(maturity_label, &forward, &atm_vol, 1);
+			++this_time_to_expiry;
 		}
 		ImPlot::EndPlot();
 	}
