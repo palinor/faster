@@ -22,7 +22,7 @@ Arena *ArenaAllocate(uint block_size, uint starting_max_blocks) {
 }
 
 Arena *ArenaAllocateDefault() {
-    const uint default_block_size = 4096;
+    const uint default_block_size = 1048576; // let's do 1MB
     const uint default_max_blocks = 10;
     return ArenaAllocate(default_block_size, default_max_blocks);
 }
