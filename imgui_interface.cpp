@@ -39,6 +39,8 @@ struct DisplayData {
 
 	uint number_of_cms = 5;
 	uint number_of_strikes_per_smile = 5;
+	float *cms_replication_vols = nullptr;
+	float *cms_replication_strikes = nullptr;
 	float *strikes = nullptr;
 	float *normal_vols = nullptr;
 	float *times_to_maturity = nullptr;
@@ -94,6 +96,8 @@ void displayDataInit(
 	data->plot_overnight_forwards = (float *)ArenaGetMemory(number_of_plot_points * sizeof(float), arena);
 	data->times_to_maturity = (float *)ArenaGetMemory(number_of_cms * sizeof(float), arena);
 	data->cms_values = (float *)ArenaGetMemory(number_of_cms * sizeof(float), arena);
+	data->cms_replication_vols = (float *)ArenaGetMemory(number_of_strikes_per_smile * sizeof(float), arena);
+	data->cms_replication_strikes = (float *)ArenaGetMemory(number_of_strikes_per_smile * sizeof(float), arena);
 	uint number_of_smiles = number_of_expiries * number_of_underlyings;
 	data->strikes = (float *)ArenaGetMemory(number_of_strikes_per_smile * number_of_smiles * sizeof(float), arena);
 	data->normal_vols = (float *)ArenaGetMemory(number_of_strikes_per_smile * number_of_smiles * sizeof(float), arena);
@@ -174,6 +178,11 @@ void displayDataInit(
 
 }
 
+float GetStrikeValue(uint strike_idx, uint number_of_strikes_per_smile, float forward) {
+	float far_left_strike = forward - 0.03f;
+	float far_right_strike = forward + 0.1f;
+	return far_left_strike + (float)strike_idx / (float)number_of_strikes_per_smile * far_right_strike;
+}
 
 void imGuiRenderLoop(DisplayData *data) {
 	ImGuiIO &io = ImGui::GetIO();
@@ -334,14 +343,27 @@ void imGuiRenderLoop(DisplayData *data) {
 	uint number_of_underlyings = data->shifted_sabr_params.number_of_underlyings;
 	float *expiries = data->shifted_sabr_params.times_to_expiry;
 	float *underlying_tenors = data->shifted_sabr_params.underlying_maturity_length;
+	OptionModelParametersShiftedSabrFloat *model = data->shifted_sabr_params.parameters;
 	for (uint i = 0; i < number_of_expiries; ++i) {
 		for (uint j = 0; j < number_of_underlyings; ++j) {
 			float *this_strike = data->strikes + i * data->number_of_strikes_per_smile;
-			float strike_spacing = 0.001f;
+			float *this_vol = data->normal_vols + i * data->number_of_strikes_per_smile;
+			float frequency = underlying_tenors[j] < 1 ? 1 / underlying_tenors[j] : 1;
 			float forward = SwapRateYieldCurveF(data->yield_curve, expiries[i], underlying_tenors[j], 1);
 			for (uint k = 0; k < data->number_of_strikes_per_smile; ++k) {
-				*this_strike++ = (float)((int)k - (int)data->number_of_strikes_per_smile / 2) * strike_spacing + forward;
+				*this_strike = GetStrikeValue(k, data->number_of_strikes_per_smile, forward);
+				*this_vol++ = ShiftedSabrImpliedNormalVol(
+					forward,
+					*this_strike++,
+					expiries[i],
+					model->sigma_0,
+					model->alpha,
+					model->beta,
+					model->rho,
+					model->zeta
+				);
 			}
+			++model;
 		}
 	}
 
@@ -378,8 +400,9 @@ void imGuiRenderLoop(DisplayData *data) {
 				if (ImGui::Button(button_label, ImVec2(-FLT_MIN, 0.0f))) {
 					selected_expiry_idx = row_idx;
 					selected_underlying_idx = col_idx;
-					*smile_is_selected_for_plotting = !*smile_is_selected_for_plotting++;
+					*smile_is_selected_for_plotting = !*smile_is_selected_for_plotting;
 				}
+				++smile_is_selected_for_plotting;
 			}
 		}
 		ImGui::EndTable();
@@ -409,19 +432,49 @@ void imGuiRenderLoop(DisplayData *data) {
 	ImGui::PushItemWidth(data->slider_width);
 	ImGui::SliderFloat(parameter_label, &(shifted_sabr_params->zeta), 0.0001, 0.1);
 
+	OptionModelParametersShiftedSabrFloat *these_parameters = data->shifted_sabr_params.parameters;
+	uint number_of_vols_per_row = number_of_underlyings * data->number_of_strikes_per_smile;
+	float *this_expiry = data->shifted_sabr_params.times_to_expiry;
+	for (uint i = 0; i < number_of_expiries; ++i) {
+		float *this_underlying_tenor = data->shifted_sabr_params.underlying_maturity_length;
+		for (uint j = 0; j < number_of_underlyings; ++j) {
+			float *this_smile = data->normal_vols + i * number_of_vols_per_row + j * data->number_of_strikes_per_smile;
+			float *this_strike = data->strikes + i * number_of_vols_per_row + j * data->number_of_strikes_per_smile;
+			float frequency = *this_underlying_tenor < 1 ? 1 / *this_underlying_tenor : 1;
+			float forward = SwapRateYieldCurveF(data->yield_curve, *this_expiry, *this_underlying_tenor, frequency);
+			for (uint k = 0; k < data->number_of_strikes_per_smile; ++k) {
+				*this_strike = GetStrikeValue(k, data->number_of_strikes_per_smile, forward);
+				*this_smile++ = ShiftedSabrImpliedNormalVol(
+					forward,
+					*this_strike++,
+					*this_expiry,
+					these_parameters->sigma_0,
+					these_parameters->alpha,
+					these_parameters->beta,
+					these_parameters->rho,
+					these_parameters->zeta
+				);
+			}
+			++these_parameters;
+			++this_underlying_tenor;
+		}
+		++this_expiry;
+	}
+
 	float *this_time_to_maturity = data->times_to_maturity;
 	float *this_cms_value = data->cms_values;
 	float *this_forward_swap_rate = data->forward_starting_swap_rates;
 	OptionModelParametersShiftedSabrFloat *interpolated_parameters = (OptionModelParametersShiftedSabrFloat *)data->interpolated_shifted_sabr_parameters;
-	for (uint i = 0; i < number_of_rows; ++i) {
+	for (uint i = 0; i < data->number_of_cms; ++i) {
 		float df;
 		DiscountFactorSpotFromYieldCurve(&df, data->yield_curve, this_time_to_maturity);
 		float forward = SwapRateYieldCurveF(data->yield_curve, *this_time_to_maturity, data->cms_maturity, 1);
-		float *this_smile = data->normal_vols + data->number_of_strikes_per_smile * i;
-		float *this_strike = data->strikes + data->number_of_strikes_per_smile * i;
 		InterpolateShiftedSabrParametersFloat(interpolated_parameters, *this_time_to_maturity, data->cms_maturity, &(data->shifted_sabr_params));
+		float *this_vol = data->cms_replication_vols;
+		float *this_strike = data->cms_replication_strikes;
 		for (uint k = 0; k < data->number_of_strikes_per_smile; ++k) {
-			*(this_smile + k) = ShiftedSabrImpliedNormalVol(
+			*this_strike = GetStrikeValue(k, data->number_of_strikes_per_smile, forward);
+			*this_vol++ = ShiftedSabrImpliedNormalVol(
 				forward,
 				*this_strike++,
 				*this_time_to_maturity,
@@ -435,8 +488,8 @@ void imGuiRenderLoop(DisplayData *data) {
 		*this_forward_swap_rate++ = forward;
 		*this_cms_value++ = CmsReplicationForwardPremium(
 			forward,
-			this_smile,
-			data->strikes + data->number_of_strikes_per_smile * i,
+			data->cms_replication_vols,
+			data->cms_replication_strikes,
 			data->number_of_strikes_per_smile,
 			*this_time_to_maturity++,
 			1,
@@ -448,34 +501,44 @@ void imGuiRenderLoop(DisplayData *data) {
 	ImGui::Begin("Options model");
 	if (ImPlot::BeginPlot("Smiles")) {
 		char maturity_label[32];
-		float *this_time_to_expiry = data->times_to_maturity;
-		for (uint i = 0; i < data->number_of_cms; ++i) {
-			snprintf(maturity_label, (uint)32, "%i Y", (int)(*this_time_to_expiry));
-			ImPlot::PlotLine(
-				maturity_label,
-				data->strikes + i * data->number_of_strikes_per_smile,
-				data->normal_vols + i * data->number_of_strikes_per_smile,
-				data->number_of_strikes_per_smile
-			);
-			float forward = SwapRateYieldCurveF(data->yield_curve, *this_time_to_expiry, data->cms_maturity, 1);
-			InterpolateShiftedSabrParametersFloat(
-				interpolated_parameters,
-				*this_time_to_expiry,
-				data->cms_maturity,
-				&(data->shifted_sabr_params)
-			);
-			float atm_vol = ShiftedSabrImpliedNormalVol(
-				forward,
-				forward,
-				*this_time_to_expiry,
-				interpolated_parameters->sigma_0,
-				interpolated_parameters->alpha,
-				interpolated_parameters->beta,
-				interpolated_parameters->rho,
-				interpolated_parameters->zeta
-			);
-			ImPlot::SetNextMarkerStyle(ImPlotMarker_Cross, -1, ImVec4(0, 0, 0, -1), 10);
-			ImPlot::PlotLine(maturity_label, &forward, &atm_vol, 1);
+		float *this_time_to_expiry = data->shifted_sabr_params.times_to_expiry;
+		bool *this_smile_is_selected_for_plotting = data->smile_is_selected_for_plotting;
+		for (uint i = 0; i < data->shifted_sabr_params.number_of_expiries; ++i) {
+			float *this_underlying_tenor = data->shifted_sabr_params.underlying_maturity_length;
+			for (uint j = 0; j < data->shifted_sabr_params.number_of_underlyings; ++j) {
+				if (*this_smile_is_selected_for_plotting++) {
+					float *strikes = data->strikes + i * data->shifted_sabr_params.number_of_underlyings * data->number_of_strikes_per_smile + j * data->number_of_strikes_per_smile;
+					float *vols = data->normal_vols + i * data->shifted_sabr_params.number_of_underlyings * data->number_of_strikes_per_smile + j * data->number_of_strikes_per_smile;
+					snprintf(maturity_label, (uint)32, "%.2fY%.2fY", *this_time_to_expiry, *this_underlying_tenor);
+					ImPlot::PlotLine(
+						maturity_label,
+						strikes,
+						vols,
+						data->number_of_strikes_per_smile
+					);
+					float frequency = *this_underlying_tenor < 1 ? 1 / *this_underlying_tenor : 1;
+					float forward = SwapRateYieldCurveF(data->yield_curve, *this_time_to_expiry, *this_underlying_tenor, frequency);
+					InterpolateShiftedSabrParametersFloat(
+						interpolated_parameters,
+						*this_time_to_expiry,
+						*this_underlying_tenor,
+						&(data->shifted_sabr_params)
+					);
+					float atm_vol = ShiftedSabrImpliedNormalVol(
+						forward,
+						forward,
+						*this_time_to_expiry,
+						interpolated_parameters->sigma_0,
+						interpolated_parameters->alpha,
+						interpolated_parameters->beta,
+						interpolated_parameters->rho,
+						interpolated_parameters->zeta
+					);
+					ImPlot::SetNextMarkerStyle(ImPlotMarker_Cross, -1, ImVec4(0, 0, 0, -1), 10);
+					ImPlot::PlotLine(maturity_label, &forward, &atm_vol, 1);
+				}
+				++this_underlying_tenor;
+			}
 			++this_time_to_expiry;
 		}
 		ImPlot::EndPlot();
