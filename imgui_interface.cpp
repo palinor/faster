@@ -58,6 +58,8 @@ struct DisplayData {
 	uint underlying_idx = 0;
 	OptionModelParametersShiftedSabrFloat *interpolated_shifted_sabr_parameters = nullptr;
 
+	LGM1FTermStructureFloat lgm_term_structure = {0};
+
 };
 
 void displayDataInit(
@@ -174,6 +176,32 @@ void displayDataInit(
 			number_floating_payments,
 			data->swap_rates[i]
 		);
+	}
+
+	uint term_structure_size = 8;
+	data->lgm_term_structure.number_of_points = term_structure_size;
+	data->lgm_term_structure.tenors = (float *)ArenaGetMemory(term_structure_size * sizeof(float), arena);
+	data->lgm_term_structure.tenors[0] = 0;
+	data->lgm_term_structure.tenors[1] = 1;
+	data->lgm_term_structure.tenors[2] = 2;
+	data->lgm_term_structure.tenors[3] = 5;
+	data->lgm_term_structure.tenors[4] = 10;
+	data->lgm_term_structure.tenors[5] = 15;
+	data->lgm_term_structure.tenors[6] = 20;
+	data->lgm_term_structure.tenors[7] = 30;
+	data->lgm_term_structure.lambda_term_structure = (PiecewiseFunctionFloat *)ArenaGetMemory(sizeof(PiecewiseFunctionFloat), arena);
+	data->lgm_term_structure.mu_term_structure = (PiecewiseFunctionFloat *)ArenaGetMemory(sizeof(PiecewiseFunctionFloat), arena);
+	data->lgm_term_structure.sigma_term_structure = (PiecewiseFunctionFloat *)ArenaGetMemory(sizeof(PiecewiseFunctionFloat), arena);
+	PiecewiseFunctionFloatAlloc(data->lgm_term_structure.lambda_term_structure, term_structure_size, arena);
+	PiecewiseFunctionFloatAlloc(data->lgm_term_structure.mu_term_structure, term_structure_size, arena);
+	PiecewiseFunctionFloatAlloc(data->lgm_term_structure.sigma_term_structure, term_structure_size, arena);
+	data->lgm_term_structure.lambdas = (float **)ArenaGetMemory(term_structure_size * sizeof(float *), arena);
+	data->lgm_term_structure.sigmas = (float **)ArenaGetMemory(term_structure_size * sizeof(float *), arena);
+	data->lgm_term_structure.mus = (float **)ArenaGetMemory(term_structure_size * sizeof(float *), arena);
+	for (uint i = 0; i < term_structure_size; ++i) {
+		data->lgm_term_structure.lambdas[i] = data->lgm_term_structure.lambda_term_structure->piecewise_functions[i].polynomials[0].coefficients;
+		data->lgm_term_structure.mus[i] = data->lgm_term_structure.mu_term_structure->piecewise_functions[i].polynomials[0].coefficients;
+		data->lgm_term_structure.sigmas[i] = data->lgm_term_structure.sigma_term_structure->piecewise_functions[i].polynomials[0].coefficients;
 	}
 
 }
@@ -553,6 +581,27 @@ void imGuiRenderLoop(DisplayData *data) {
 	if (ImPlot::BeginPlot("Forward swaps and CMS")) {
 		ImPlot::PlotLine(cms_label, data->times_to_maturity, data->cms_values, data->number_of_cms);
 		ImPlot::PlotLine(forward_swap_label, data->times_to_maturity, data->forward_starting_swap_rates, data->number_of_cms);
+		ImPlot::EndPlot();
+	}
+	ImGui::End();
+
+	ImGui::Begin("LGM Term Structure");
+	ImGui::PushItemWidth(data->slider_width);
+	static float constant_lambda_value;
+	ImGui::SliderFloat("Lambda", &constant_lambda_value, 0.0001, 0.1);
+	LGM1FSetConstantLambda(&(data->lgm_term_structure), constant_lambda_value);
+	if (ImPlot::BeginPlot("LGM Term Structure")) {
+		static float lambdas[16];
+		static float sigmas[16];
+		static float mus[16];
+		for (uint i = 0; i < data->lgm_term_structure.number_of_points; ++i) {
+			lambdas[i] = *(data->lgm_term_structure.lambdas[i]);
+			sigmas[i] = *(data->lgm_term_structure.sigmas[i]);
+			mus[i] = *(data->lgm_term_structure.mus[i]);
+		}
+		ImPlot::PlotLine("Lambda", data->lgm_term_structure.tenors, lambdas, data->lgm_term_structure.number_of_points);
+		ImPlot::PlotLine("Mu", data->lgm_term_structure.tenors, mus, data->lgm_term_structure.number_of_points);
+		ImPlot::PlotLine("Sigma", data->lgm_term_structure.tenors, sigmas, data->lgm_term_structure.number_of_points);
 		ImPlot::EndPlot();
 	}
 	ImGui::End();
