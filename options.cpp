@@ -1,5 +1,13 @@
-#include <math.h>
+/**
+ * (C) Copyright 2024 Aion Feehan. All Rights Reserved.
+ *
+ * This software is provided 'as-is', without any express or implied warranty. In no event will the authors
+ * be held liable for any damages arising from the use of this software.
+ *
+ */
 
+#include <math.h>
+#include "piecewise_functions.cpp"
 
 enum class OptionType {
 	CALL,
@@ -29,7 +37,7 @@ struct OptionModelHeader {
 
 };
 
-struct OptionModelParametersShiftedSabrFloat{
+struct OptionModelParametersShiftedSabrFloat {
 	OptionModelHeader model_header;
 	float sigma_0;
 	float alpha;
@@ -46,7 +54,7 @@ struct ShiftedSabrParamGrid {
 	uint number_of_underlyings = 0;
 };
 
-void InterpolateShiftedSabrParametersFloat(void *target, float expiry, float underlying_length, ShiftedSabrParamGrid *param_grid){
+void InterpolateShiftedSabrParametersFloat(void *target, float expiry, float underlying_length, ShiftedSabrParamGrid *param_grid) {
 	OptionModelHeader *result_header = (OptionModelHeader *)target;
 	OptionModelParametersShiftedSabrFloat *result = (OptionModelParametersShiftedSabrFloat *)target;
 	uint expiry_idx_a = 0;
@@ -85,23 +93,23 @@ void InterpolateShiftedSabrParametersFloat(void *target, float expiry, float und
 
 	float sigma_0_expiry_a = params_expiry_a_underlying_a->sigma_0 + underlying_interpolation_coefficient * params_expiry_a_underlying_b->sigma_0;
 	float sigma_0_expiry_b = params_expiry_b_underlying_a->sigma_0 + underlying_interpolation_coefficient * params_expiry_b_underlying_b->sigma_0;
-	result->sigma_0 = sigma_0_expiry_a + expiry_interpolation_coefficient * sigma_0_expiry_b;	
-	
+	result->sigma_0 = sigma_0_expiry_a + expiry_interpolation_coefficient * sigma_0_expiry_b;
+
 	float alpha_expiry_a = params_expiry_a_underlying_a->alpha + underlying_interpolation_coefficient * params_expiry_a_underlying_b->alpha;
 	float alpha_expiry_b = params_expiry_b_underlying_a->alpha + underlying_interpolation_coefficient * params_expiry_b_underlying_b->alpha;
-	result->alpha = alpha_expiry_a + expiry_interpolation_coefficient * alpha_expiry_b;	
+	result->alpha = alpha_expiry_a + expiry_interpolation_coefficient * alpha_expiry_b;
 
 	float beta_expiry_a = params_expiry_a_underlying_a->beta + underlying_interpolation_coefficient * params_expiry_a_underlying_b->beta;
 	float beta_expiry_b = params_expiry_b_underlying_a->beta + underlying_interpolation_coefficient * params_expiry_b_underlying_b->beta;
-	result->beta = beta_expiry_a + expiry_interpolation_coefficient * beta_expiry_b;	
+	result->beta = beta_expiry_a + expiry_interpolation_coefficient * beta_expiry_b;
 
 	float rho_expiry_a = params_expiry_a_underlying_a->rho + underlying_interpolation_coefficient * params_expiry_a_underlying_b->rho;
 	float rho_expiry_b = params_expiry_b_underlying_a->rho + underlying_interpolation_coefficient * params_expiry_b_underlying_b->rho;
-	result->rho = rho_expiry_a + expiry_interpolation_coefficient * rho_expiry_b;	
+	result->rho = rho_expiry_a + expiry_interpolation_coefficient * rho_expiry_b;
 
 	float zeta_expiry_a = params_expiry_a_underlying_a->zeta + underlying_interpolation_coefficient * params_expiry_a_underlying_b->zeta;
 	float zeta_expiry_b = params_expiry_b_underlying_a->zeta + underlying_interpolation_coefficient * params_expiry_b_underlying_b->zeta;
-	result->zeta = zeta_expiry_a + expiry_interpolation_coefficient * zeta_expiry_b;	
+	result->zeta = zeta_expiry_a + expiry_interpolation_coefficient * zeta_expiry_b;
 }
 
 float OptionForwardPremiumNormalVol(float normal_vol, float forward, float strike, float time_to_maturity_in_years, OptionType option_type) {
@@ -157,8 +165,7 @@ float OptionForwardImpliedNormalVolBrent(float option_forward_premium, float for
 	if (left_error < right_error) {
 		closest_vol = left_bracket_vol;
 		closest_premium = option_forward_premium_left_bracket;
-	}
-	else {
+	} else {
 		closest_vol = right_bracket_vol;
 		closest_premium = option_forward_premium_right_bracket;
 	}
@@ -171,29 +178,26 @@ float OptionForwardImpliedNormalVolBrent(float option_forward_premium, float for
 			solution = left_bracket_vol * option_forward_premium_right_bracket * closest_premium / ((option_forward_premium_left_bracket - option_forward_premium_right_bracket) * (option_forward_premium_left_bracket - closest_premium))
 				+ right_bracket_vol * option_forward_premium_left_bracket * closest_premium / ((option_forward_premium_right_bracket - option_forward_premium_left_bracket) * (option_forward_premium_right_bracket - closest_premium))
 				+ closest_vol * option_forward_premium_left_bracket * option_forward_premium_right_bracket / ((closest_premium - option_forward_premium_left_bracket) * (closest_premium - option_forward_premium_right_bracket));
-		}
-		else {
+		} else {
 			solution = right_bracket_vol - option_forward_premium_right_bracket * (right_bracket_vol - left_bracket_vol) / (option_forward_premium_right_bracket - option_forward_premium_left_bracket);
 		}
 		bool condition_1 = (solution < (3 * left_bracket_vol + right_bracket_vol) / 4) || (right_bracket_vol < solution);
-		bool condition_2 = we_use_bisection_method && (fabsf(solution - right_bracket_vol) > fabsf(right_bracket_vol - closest_vol) / 2); 
+		bool condition_2 = we_use_bisection_method && (fabsf(solution - right_bracket_vol) > fabsf(right_bracket_vol - closest_vol) / 2);
 		bool condition_3 = !we_use_bisection_method && (fabsf(solution - right_bracket_vol) > fabsf(closest_vol - last_closest_vol) / 2);
 		bool condition_4 = we_use_bisection_method && (fabsf(right_bracket_vol - closest_vol) < tolerance);
 		bool condition_5 = !we_use_bisection_method && (fabsf(closest_vol - last_closest_vol) < tolerance);
 		if (condition_1 || condition_2 || condition_3 || condition_4 || condition_5) {
 			solution = (left_bracket_vol + right_bracket_vol) / 2;
 			we_use_bisection_method = true;
-		}
-		else {
+		} else {
 			we_use_bisection_method = false;
 		}
 		float solution_premium = OptionForwardPremiumNormalVol(solution, forward, strike, time_to_maturity_in_years, option_type);
 		last_closest_vol = closest_vol;
-		if (option_forward_premium_left_bracket * solution_premium < 0) {
+		if (option_forward_premium_left_bracket *solution_premium < 0) {
 			right_bracket_vol = solution;
 			option_forward_premium_right_bracket = solution_premium;
-		}
-		else {
+		} else {
 			left_bracket_vol = solution;
 			option_forward_premium_left_bracket = solution_premium;
 		}
@@ -226,8 +230,7 @@ float OptionForwardImpliedNormalVolJackel(float premium, float forward, float st
 		float xi_denominator = 1 - g_2 * (denominator_coef_1 - g_2 * (denominator_coef_2 - denominator_coef_3 * g_2));
 		float xi = xi_numerator / xi_denominator;
 		x_bar = g * (one_over_sqrt_2pi + xi * g_2);
-	}
-	else {
+	} else {
 		float h = sqrtf(-logf(-psi_star));
 		const float numerator_coef_1 = 9.4883409779f;
 		const float numerator_coef_2 = 9.6320903635f;
@@ -259,14 +262,12 @@ float ShiftedSabrImpliedNormalVol(float forward, float strike, float time_to_mat
 	float z = 0;
 	if (beta > 0.99) {
 		z = alpha * moneyness / sigma_0;
-	}
-	else {
+	} else {
 		z = alpha / sigma_0 * (powf(shifted_forward, 1 - beta) - powf(shifted_strike, 1 - beta)) / (1 - beta);
 	}
 	if (fabsf(moneyness) < 1e-10) {
 		i_0 = sigma_0 * powf(shifted_strike, beta);
-	}
-	else {
+	} else {
 		i_0 = alpha * moneyness / logf(
 			(sqrtf(1 - 2 * rho * z + z * z) + z - rho) / (1 - rho)
 		);
@@ -317,7 +318,7 @@ float D2CashLevel(float forward, float fixed_swap_leg_coverage, float cms_maturi
 float CmsReplicationIntegralFunction(float strike, float fixed_swap_leg_coverage, float cms_maturity_in_years) {
 	if (fabsf(strike) < 1e-7) {
 		return cms_maturity_in_years * (cms_maturity_in_years + 1) * (cms_maturity_in_years + 2)
-		* fixed_swap_leg_coverage * fixed_swap_leg_coverage * fixed_swap_leg_coverage / 3;
+			* fixed_swap_leg_coverage * fixed_swap_leg_coverage * fixed_swap_leg_coverage / 3;
 	}
 	float cash_level = CashLevel(strike, fixed_swap_leg_coverage, cms_maturity_in_years);
 	return (
@@ -369,14 +370,14 @@ float CmsReplicationForwardPremium(float forward, float *normal_vols, float *str
 		*this_strike++,
 		time_to_payment_in_years,
 		OptionType::PUT
-		);
+	);
 	float last_put_integration_point = cm_replication_value * last_put_price;
 
 	for (uint i = 1; i < n_strikes; ++i) {
 		float cm_function_value = CmsReplicationIntegralFunction(
-				*this_strike,
-				fixed_swap_leg_coverage,
-				cms_maturity_in_years
+			*this_strike,
+			fixed_swap_leg_coverage,
+			cms_maturity_in_years
 		);
 		if (i < number_of_puts) {
 			float strike_distance = (*this_strike - last_strike);
@@ -391,12 +392,10 @@ float CmsReplicationForwardPremium(float forward, float *normal_vols, float *str
 			float integration_value = cm_function_value * put_price;
 			put_integral += (last_put_integration_point + integration_value) * strike_distance / 2;
 			last_put_integration_point = integration_value;
-		}
-		else if (i == number_of_puts) {
+		} else if (i == number_of_puts) {
 			++this_strike;
 			++this_vol;
-		}
-		else {
+		} else {
 			float strike_distance = (*this_strike - last_strike);
 			last_strike = *this_strike;
 			float call_price = OptionForwardPremiumNormalVol(
@@ -417,4 +416,80 @@ float CmsReplicationForwardPremium(float forward, float *normal_vols, float *str
 }
 
 
+struct LGM1FTermStructureFloat {
+
+	uint number_of_points;
+	float *tenors;
+	PiecewiseFunctionFloat *lambda_term_structure;
+	PiecewiseFunctionFloat *sigma_term_structure;
+	PiecewiseFunctionFloat *mu_term_structure;
+	float **lambdas; // these are views to the coefficients in the term structure elements
+	float **mus;
+	float **sigmas;
+
+};
+
+void LGM1FCapitalLambda(PiecewiseFunctionFloat *result, PiecewiseFunctionFloat *lambda_term_structure, float T_end) {
+	PiecewiseFunctionFloat temp_backward;
+	temp_backward.term_structure_size = lambda_term_structure->term_structure_size;
+	temp_backward.piecewise_functions = (PolynomialExpFunctionSumFloat *)alloca(lambda_term_structure->term_structure_size * sizeof(PolynomialExpFunctionSumFloat));
+	PolynomialExpFunctionSumFloat *this_source_function = lambda_term_structure->piecewise_functions;
+	PolynomialExpFunctionSumFloat *this_destination_function = temp_backward.piecewise_functions;
+	for (uint i = 0; i < lambda_term_structure->term_structure_size; ++i) {
+		this_destination_function->number_of_polynomials = this_source_function->number_of_polynomials;
+		PolynomialFloat *this_source_polynomial = this_source_function->polynomials;
+		PolynomialFloat *this_destination_polynomial = this_destination_function->polynomials;
+		for (uint j = 0; j < this_source_function->number_of_polynomials; ++j) {
+			this_destination_polynomial->coefficients = (float *)alloca(POLYNOMIAL_EXP_FUNCTION_NB_COEFS * sizeof(float));
+			this_destination_polynomial->number_of_coefficients = this_source_polynomial->number_of_coefficients;
+			float *this_source_coef = this_source_polynomial->coefficients;
+			float *this_destination_coef = this_destination_polynomial->coefficients;
+			for (uint k = 0; k < this_source_polynomial->number_of_coefficients; ++k) {
+				*this_destination_coef++ = -1 * (*this_source_coef++);
+			}
+			++this_destination_polynomial;
+			++this_source_polynomial;
+		}
+		++this_destination_function;
+		++this_source_function;
+	}
+	PiecewiseFunctionFloatGetExponentialForwardIntegral(result, lambda_term_structure, 0);
+	PiecewiseFunctionFloatPrimitive(result, result);
+	PiecewiseFunctionFloatGetExponentialBackwardIntegral(&temp_backward, &temp_backward, 0);
+	float epsilon = 1e-6f; // just to make sure we stay on the left side of the interval
+	float this_integral_value = (*result)(T_end - epsilon);
+	PiecewiseFunctionFloatMultiplyByConstant(result, -1);
+	PiecewiseFunctionFloatAddConstant(result, this_integral_value);
+	PiecewiseFunctionFloatMultiply(result, result, &temp_backward);
+}
+
+
+void LGM1FSetConstantLambda(LGM1FTermStructureFloat *result, float lambda) {
+	PiecewiseFunctionFloat *lambda_term_structure = result->lambda_term_structure;
+	PolynomialExpFunctionSumFloat *this_function = lambda_term_structure->piecewise_functions;
+	for (uint i = 0; i < lambda_term_structure->term_structure_size; ++i) {
+		this_function->number_of_polynomials = 1;
+		this_function->exp_coefs[0] = 0;
+		this_function->polynomials[0].number_of_coefficients = 1;
+		this_function->polynomials[0].coefficients[0] = lambda;
+		++this_function;	
+	}
+}
+
+void LGM1FSetLambdaTermStructure(LGM1FTermStructureFloat *result, float *lambdas) {
+	PiecewiseFunctionFloat *lambda_term_structure = result->lambda_term_structure;
+	PolynomialExpFunctionSumFloat *this_function = lambda_term_structure->piecewise_functions;
+	float *this_source_lambda = lambdas;
+	for (uint i = 0; i < lambda_term_structure->term_structure_size; ++i) {
+		this_function->number_of_polynomials = 1;
+		this_function->exp_coefs[0] = 0;
+		this_function->polynomials[0].coefficients[0] = *this_source_lambda++;
+		++this_function;
+	}
+}
+
+
+float LGM1FGetTermCapletVol(LGM1FTermStructureFloat *lgm_term_structure, float time_to_expiry, float underlying_length) {
+	return 0;
+}
 
