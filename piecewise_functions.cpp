@@ -10,6 +10,8 @@
 #include <cstring>
 #include <cmath>
 
+#include "arena_allocator.h"
+
 
  /**
   * Structure to represent polynomial functions: f(x) -> a_0 + a_1 * X + ... + a_n * X ^ n
@@ -434,6 +436,19 @@ struct PiecewiseFunctionFloat {
 
 };
 
+void PiecewiseFunctionFloatAlloc(PiecewiseFunctionFloat *result, uint term_structure_size, Arena *arena) {
+    result->term_structure_size = term_structure_size;
+    result->time_term_structure = (float *)ArenaGetMemory(term_structure_size * sizeof(float), arena);
+    result->piecewise_functions = (PolynomialExpFunctionSumFloat *)ArenaGetMemory(term_structure_size * sizeof(PolynomialExpFunctionSumFloat), arena);
+    PolynomialExpFunctionSumFloat *this_function = result->piecewise_functions;
+    for (uint i = 0; i < term_structure_size; ++i) {
+        for (uint j = 0; j < POLYNOMIAL_EXP_FUNCTION_SIZE; ++j) {
+            this_function->polynomials[j].coefficients = (float *)ArenaGetMemory(POLYNOMIAL_EXP_FUNCTION_NB_COEFS * sizeof(float), arena);
+        }
+        ++this_function;
+    }
+}
+
 void PiecewiseFunctionFloatAdd(PiecewiseFunctionFloat *result, PiecewiseFunctionFloat *A, PiecewiseFunctionFloat *B) {
     assert(A->term_structure_size == B->term_structure_size);
     result->term_structure_size = A->term_structure_size;
@@ -461,6 +476,33 @@ void PiecewiseFunctionFloatMultiply(PiecewiseFunctionFloat *result, PiecewiseFun
     for (uint i = 0; i < result->term_structure_size; ++i) {
         assert(fabsf(*a_time++ - *b_time++) < 1e-9f);
         PolynomialExpFunctionSumFloatMultiply(result_function++, a_function++, b_function++);
+    }
+}
+
+void PiecewiseFunctionFloatAddConstant(PiecewiseFunctionFloat *result, float constant) {
+    PolynomialExpFunctionSumFloat *this_function = result->piecewise_functions;
+    for (uint i = 0; i < result->term_structure_size; ++i) {
+        PolynomialFloat *this_polynomial = this_function->polynomials;
+        for (uint j = 0; j < this_function->number_of_polynomials; ++j) {
+            this_polynomial->coefficients[0] += constant;
+            ++this_polynomial;
+        }
+        ++this_function;
+    }
+}
+
+void PiecewiseFunctionFloatMultiplyByConstant(PiecewiseFunctionFloat *result, float constant) {
+    PolynomialExpFunctionSumFloat *this_function = result->piecewise_functions;
+    for (uint i = 0; i < result->term_structure_size; ++i) {
+        PolynomialFloat *this_polynomial = this_function->polynomials;
+        for (uint j = 0; j < this_function->number_of_polynomials; ++j) {
+            float *this_coef = this_polynomial->coefficients;
+            for (uint k = 0; k < this_polynomial->number_of_coefficients; ++k) {
+                *this_coef++ *= constant;
+            }
+            ++this_polynomial;
+        }
+        ++this_function;
     }
 }
 
