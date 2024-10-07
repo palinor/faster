@@ -54,6 +54,9 @@ struct ShiftedSabrParamGrid {
 	uint number_of_underlyings = 0;
 };
 
+
+
+
 void InterpolateShiftedSabrParametersFloat(void *target, float expiry, float underlying_length, ShiftedSabrParamGrid *param_grid) {
 	OptionModelHeader *result_header = (OptionModelHeader *)target;
 	OptionModelParametersShiftedSabrFloat *result = (OptionModelParametersShiftedSabrFloat *)target;
@@ -149,13 +152,69 @@ float OptionForwardPremiumLognormalVol(float lognormal_vol, float forward, float
 	return 0;
 }
 
+float OptionForwardImpliedLognormalVolBrent(float option_forward_premium, float forward, float strike, float time_to_maturity_in_years, OptionType option_type, float tolerance) {
+	float left_bracket_vol = 0.000001f;
+	float right_bracket_vol = 3.f;
+	float option_forward_premium_left_bracket = OptionForwardPremiumLognormalVol(left_bracket_vol, forward, strike, time_to_maturity_in_years, option_type);
+	float option_forward_premium_right_bracket = OptionForwardPremiumLognormalVol(right_bracket_vol, forward, strike, time_to_maturity_in_years, option_type);
+	if ((option_forward_premium_left_bracket - option_forward_premium) * (option_forward_premium_right_bracket - option_forward_premium) > 0) {
+		return -1;
+	}
+	float closest_vol = 0.0f;
+	float closest_premium = 0.0f;
+	float left_error = fabsf(option_forward_premium_left_bracket - option_forward_premium);
+	float right_error = fabsf(option_forward_premium_right_bracket - option_forward_premium);
+	if (left_error < right_error) {
+		closest_vol = left_bracket_vol;
+		closest_premium = option_forward_premium_left_bracket;
+	} else {
+		closest_vol = right_bracket_vol;
+		closest_premium = option_forward_premium_right_bracket;
+	}
+	float solution = 0;
+	bool we_use_bisection_method = true;
+	float last_closest_vol = closest_vol;
+	// brent
+	while ((left_error > tolerance) && (right_error > tolerance) && (fabs(right_bracket_vol - left_bracket_vol) > tolerance)) {
+		if ((option_forward_premium_left_bracket != closest_premium) && (option_forward_premium_right_bracket != closest_premium)) {
+			solution = left_bracket_vol * option_forward_premium_right_bracket * closest_premium / ((option_forward_premium_left_bracket - option_forward_premium_right_bracket) * (option_forward_premium_left_bracket - closest_premium))
+				+ right_bracket_vol * option_forward_premium_left_bracket * closest_premium / ((option_forward_premium_right_bracket - option_forward_premium_left_bracket) * (option_forward_premium_right_bracket - closest_premium))
+				+ closest_vol * option_forward_premium_left_bracket * option_forward_premium_right_bracket / ((closest_premium - option_forward_premium_left_bracket) * (closest_premium - option_forward_premium_right_bracket));
+		} else {
+			solution = right_bracket_vol - option_forward_premium_right_bracket * (right_bracket_vol - left_bracket_vol) / (option_forward_premium_right_bracket - option_forward_premium_left_bracket);
+		}
+		bool condition_1 = (solution < (3 * left_bracket_vol + right_bracket_vol) / 4) || (right_bracket_vol < solution);
+		bool condition_2 = we_use_bisection_method && (fabsf(solution - right_bracket_vol) > fabsf(right_bracket_vol - closest_vol) / 2);
+		bool condition_3 = !we_use_bisection_method && (fabsf(solution - right_bracket_vol) > fabsf(closest_vol - last_closest_vol) / 2);
+		bool condition_4 = we_use_bisection_method && (fabsf(right_bracket_vol - closest_vol) < tolerance);
+		bool condition_5 = !we_use_bisection_method && (fabsf(closest_vol - last_closest_vol) < tolerance);
+		if (condition_1 || condition_2 || condition_3 || condition_4 || condition_5) {
+			solution = (left_bracket_vol + right_bracket_vol) / 2;
+			we_use_bisection_method = true;
+		} else {
+			we_use_bisection_method = false;
+		}
+		float solution_premium = OptionForwardPremiumLognormalVol(solution, forward, strike, time_to_maturity_in_years, option_type);
+		last_closest_vol = closest_vol;
+		if ((option_forward_premium_left_bracket - option_forward_premium) * (solution_premium - option_forward_premium) < 0) {
+			right_bracket_vol = solution;
+			option_forward_premium_right_bracket = solution_premium;
+		} else {
+			left_bracket_vol = solution;
+			option_forward_premium_left_bracket = solution_premium;
+		}
+
+	}
+	return solution;
+}
+
 
 float OptionForwardImpliedNormalVolBrent(float option_forward_premium, float forward, float strike, float time_to_maturity_in_years, OptionType option_type, float tolerance) {
 	float left_bracket_vol = 0.0f;
 	float right_bracket_vol = 0.3f;
 	float option_forward_premium_left_bracket = OptionForwardPremiumNormalVol(left_bracket_vol, forward, strike, time_to_maturity_in_years, option_type);
 	float option_forward_premium_right_bracket = OptionForwardPremiumNormalVol(right_bracket_vol, forward, strike, time_to_maturity_in_years, option_type);
-	if (option_forward_premium_left_bracket * option_forward_premium_right_bracket > 0) {
+	if ((option_forward_premium_left_bracket - option_forward_premium) * (option_forward_premium_right_bracket - option_forward_premium) > 0) {
 		return -1;
 	}
 	float closest_vol = 0.0f;
@@ -194,7 +253,7 @@ float OptionForwardImpliedNormalVolBrent(float option_forward_premium, float for
 		}
 		float solution_premium = OptionForwardPremiumNormalVol(solution, forward, strike, time_to_maturity_in_years, option_type);
 		last_closest_vol = closest_vol;
-		if (option_forward_premium_left_bracket *solution_premium < 0) {
+		if ((option_forward_premium_left_bracket - option_forward_premium) * (solution_premium - option_forward_premium) < 0) {
 			right_bracket_vol = solution;
 			option_forward_premium_right_bracket = solution_premium;
 		} else {
@@ -419,6 +478,7 @@ float CmsReplicationForwardPremium(float forward, float *normal_vols, float *str
 struct LGM1FTermStructureFloat {
 
 	uint number_of_points;
+	float r_0;
 	float *tenors;
 	PiecewiseFunctionFloat *lambda_term_structure;
 	PiecewiseFunctionFloat *sigma_term_structure;
@@ -429,10 +489,51 @@ struct LGM1FTermStructureFloat {
 
 };
 
+void LGM1FSetConstantLambda(LGM1FTermStructureFloat *result, float lambda) {
+	PiecewiseFunctionFloat *lambda_term_structure = result->lambda_term_structure;
+	PiecewiseFunctionFloat *sigma_term_structure = result->sigma_term_structure;
+	PiecewiseFunctionFloat *mu_term_structure = result->mu_term_structure;
+	PolynomialExpFunctionSumFloat *this_lambda_function = lambda_term_structure->piecewise_functions;
+	PolynomialExpFunctionSumFloat *this_mu_function = mu_term_structure->piecewise_functions;
+	PolynomialExpFunctionSumFloat *this_sigma_function = sigma_term_structure->piecewise_functions;
+	for (uint i = 0; i < lambda_term_structure->term_structure_size; ++i) {
+		this_lambda_function->number_of_polynomials = 1;
+		this_mu_function->number_of_polynomials = 1;
+		this_sigma_function->number_of_polynomials = 1;
+		this_lambda_function->exp_coefs[0] = 0;
+		this_sigma_function->exp_coefs[0] = 0;
+		this_mu_function->exp_coefs[0] = 0;
+		this_lambda_function->polynomials[0].number_of_coefficients = 1;
+		this_mu_function->polynomials[0].number_of_coefficients = 1;
+		this_sigma_function->polynomials[0].number_of_coefficients = 1;
+		this_lambda_function->polynomials[0].coefficients[0] = lambda;
+		this_sigma_function->polynomials[0].coefficients[0] = 0;
+		this_mu_function->polynomials[0].coefficients[0] = 0;
+		++this_lambda_function;	
+		++this_mu_function;	
+		++this_sigma_function;	
+	}
+}
+
+void LGM1FSetLambdaTermStructure(LGM1FTermStructureFloat *result, float *lambdas) {
+	PiecewiseFunctionFloat *lambda_term_structure = result->lambda_term_structure;
+	PolynomialExpFunctionSumFloat *this_function = lambda_term_structure->piecewise_functions;
+	float *this_source_lambda = lambdas;
+	for (uint i = 0; i < lambda_term_structure->term_structure_size; ++i) {
+		this_function->number_of_polynomials = 1;
+		this_function->exp_coefs[0] = 0;
+		this_function->polynomials[0].coefficients[0] = *this_source_lambda++;
+		++this_function;
+	}
+}
+
+
 void LGM1FCapitalLambda(PiecewiseFunctionFloat *result, PiecewiseFunctionFloat *lambda_term_structure, float T_end) {
 	PiecewiseFunctionFloat temp_backward;
 	temp_backward.term_structure_size = lambda_term_structure->term_structure_size;
 	temp_backward.piecewise_functions = (PolynomialExpFunctionSumFloat *)alloca(lambda_term_structure->term_structure_size * sizeof(PolynomialExpFunctionSumFloat));
+	temp_backward.time_term_structure = (float *)alloca(lambda_term_structure->term_structure_size * sizeof(float));
+	memcpy(temp_backward.time_term_structure, lambda_term_structure->time_term_structure, lambda_term_structure->term_structure_size * sizeof(float));
 	PolynomialExpFunctionSumFloat *this_source_function = lambda_term_structure->piecewise_functions;
 	PolynomialExpFunctionSumFloat *this_destination_function = temp_backward.piecewise_functions;
 	for (uint i = 0; i < lambda_term_structure->term_structure_size; ++i) {
@@ -464,32 +565,225 @@ void LGM1FCapitalLambda(PiecewiseFunctionFloat *result, PiecewiseFunctionFloat *
 }
 
 
-void LGM1FSetConstantLambda(LGM1FTermStructureFloat *result, float lambda) {
-	PiecewiseFunctionFloat *lambda_term_structure = result->lambda_term_structure;
-	PolynomialExpFunctionSumFloat *this_function = lambda_term_structure->piecewise_functions;
-	for (uint i = 0; i < lambda_term_structure->term_structure_size; ++i) {
-		this_function->number_of_polynomials = 1;
-		this_function->exp_coefs[0] = 0;
-		this_function->polynomials[0].number_of_coefficients = 1;
-		this_function->polynomials[0].coefficients[0] = lambda;
-		++this_function;	
+//todo(AION) there is a bug in here somewhere: variance always evaluates to 0
+void LGM1FDiscountFactorVolProcess(PiecewiseFunctionFloat *result, PiecewiseFunctionFloat *lambda_term_structure, PiecewiseFunctionFloat *sigma_term_structure, float T_end) {
+	LGM1FCapitalLambda(result, lambda_term_structure, T_end);
+	PiecewiseFunctionFloatMultiply(result, result, sigma_term_structure);
+	PiecewiseFunctionFloatMultiplyByConstant(result, -1);
+}
+
+
+float LGM1FDiscountFactorDrift(LGM1FTermStructureFloat *lgm_term_structure, float start_time, float end_time) {
+	PiecewiseFunctionFloat drift_piecewise_function;
+	PiecewiseFunctionFloat lambda_x_mu_piecewise_function;
+	drift_piecewise_function.term_structure_size = lgm_term_structure->lambda_term_structure->term_structure_size;
+	lambda_x_mu_piecewise_function.term_structure_size = lgm_term_structure->lambda_term_structure->term_structure_size;
+	drift_piecewise_function.piecewise_functions = (PolynomialExpFunctionSumFloat *)alloca(drift_piecewise_function.term_structure_size * sizeof(PolynomialExpFunctionSumFloat));
+	lambda_x_mu_piecewise_function.piecewise_functions = (PolynomialExpFunctionSumFloat *)alloca(drift_piecewise_function.term_structure_size * sizeof(PolynomialExpFunctionSumFloat));
+	for (uint i = 0; i < drift_piecewise_function.term_structure_size; ++i) {
+		for (uint j = 0; j < POLYNOMIAL_EXP_FUNCTION_SIZE; ++j) {
+			drift_piecewise_function.piecewise_functions[i].polynomials[j].coefficients = (float *)alloca(POLYNOMIAL_EXP_FUNCTION_NB_COEFS * sizeof(float));
+			lambda_x_mu_piecewise_function.piecewise_functions[i].polynomials[j].coefficients = (float *)alloca(POLYNOMIAL_EXP_FUNCTION_NB_COEFS * sizeof(float));
+		}
+	}
+
+	LGM1FCapitalLambda(&drift_piecewise_function, lgm_term_structure->lambda_term_structure, end_time);
+	float constant_term = lgm_term_structure->r_0 * drift_piecewise_function(start_time);
+	PiecewiseFunctionFloatMultiply(&lambda_x_mu_piecewise_function, lgm_term_structure->lambda_term_structure, lgm_term_structure->mu_term_structure);
+	PiecewiseFunctionFloatMultiply(&drift_piecewise_function, &drift_piecewise_function, &drift_piecewise_function);
+	return PiecewiseFunctionFloatIntegral(&drift_piecewise_function, start_time, end_time) + constant_term;
+}
+
+float LGM1FDiscountFactorVariance(LGM1FTermStructureFloat *lgm_term_structure, float start_time, float end_time) {
+	PiecewiseFunctionFloat variance_piecewise_function;
+	variance_piecewise_function.term_structure_size = lgm_term_structure->lambda_term_structure->term_structure_size;
+	variance_piecewise_function.term_structure_size = lgm_term_structure->lambda_term_structure->term_structure_size;
+	variance_piecewise_function.piecewise_functions = (PolynomialExpFunctionSumFloat *)alloca(variance_piecewise_function.term_structure_size * sizeof(PolynomialExpFunctionSumFloat));
+	for (uint i = 0; i < variance_piecewise_function.term_structure_size; ++i) {
+		for (uint j = 0; j < POLYNOMIAL_EXP_FUNCTION_SIZE; ++j) {
+			variance_piecewise_function.piecewise_functions[i].polynomials[j].coefficients = (float *)alloca(POLYNOMIAL_EXP_FUNCTION_NB_COEFS * sizeof(float));
+		}
+	}
+
+	LGM1FCapitalLambda(&variance_piecewise_function, lgm_term_structure->lambda_term_structure, end_time);
+	PiecewiseFunctionFloatMultiply(&variance_piecewise_function, &variance_piecewise_function, lgm_term_structure->sigma_term_structure);
+	PiecewiseFunctionFloatMultiply(&variance_piecewise_function, &variance_piecewise_function, &variance_piecewise_function);
+	return PiecewiseFunctionFloatIntegral(&variance_piecewise_function, start_time, end_time);
+}
+
+
+float LGM1FDiscountFactorTForwardChangeOfMeasure(LGM1FTermStructureFloat *lgm_term_structure, float start_time, float end_time, float t_forward) {
+	PiecewiseFunctionFloat t_forward_drift_function;
+	PiecewiseFunctionFloat capital_lambda_t_forward;
+	t_forward_drift_function.term_structure_size = lgm_term_structure->lambda_term_structure->term_structure_size;
+	capital_lambda_t_forward.term_structure_size = lgm_term_structure->lambda_term_structure->term_structure_size;
+	t_forward_drift_function.term_structure_size = lgm_term_structure->lambda_term_structure->term_structure_size;
+	capital_lambda_t_forward.term_structure_size = lgm_term_structure->lambda_term_structure->term_structure_size;
+	t_forward_drift_function.piecewise_functions = (PolynomialExpFunctionSumFloat *)alloca(t_forward_drift_function.term_structure_size * sizeof(PolynomialExpFunctionSumFloat));
+	capital_lambda_t_forward.piecewise_functions = (PolynomialExpFunctionSumFloat *)alloca(t_forward_drift_function.term_structure_size * sizeof(PolynomialExpFunctionSumFloat));
+	for (uint i = 0; i < t_forward_drift_function.term_structure_size; ++i) {
+		for (uint j = 0; j < POLYNOMIAL_EXP_FUNCTION_SIZE; ++j) {
+			t_forward_drift_function.piecewise_functions[i].polynomials[j].coefficients = (float *)alloca(POLYNOMIAL_EXP_FUNCTION_NB_COEFS * sizeof(float));
+			capital_lambda_t_forward.piecewise_functions[i].polynomials[j].coefficients = (float *)alloca(POLYNOMIAL_EXP_FUNCTION_NB_COEFS * sizeof(float));
+		}
+	}
+
+	LGM1FCapitalLambda(&t_forward_drift_function, lgm_term_structure->lambda_term_structure, end_time);
+	LGM1FCapitalLambda(&capital_lambda_t_forward, lgm_term_structure->lambda_term_structure, t_forward);
+	PiecewiseFunctionFloatMultiply(&t_forward_drift_function, &t_forward_drift_function, lgm_term_structure->sigma_term_structure);
+	PiecewiseFunctionFloatMultiply(&t_forward_drift_function, &t_forward_drift_function, &t_forward_drift_function);
+	PiecewiseFunctionFloatMultiply(&t_forward_drift_function, &t_forward_drift_function, &capital_lambda_t_forward);
+	return - PiecewiseFunctionFloatIntegral(&t_forward_drift_function, start_time, end_time);
+}
+
+float LGM1FDiscountFactorValue(LGM1FTermStructureFloat *lgm_term_structure, float start_time, float end_time) {
+	float log_discount_factor_drift = LGM1FDiscountFactorDrift(lgm_term_structure, start_time, end_time);
+	float log_discount_factor_variance = LGM1FDiscountFactorVariance(lgm_term_structure, start_time, end_time);
+	return expf(-log_discount_factor_drift + log_discount_factor_variance / 2.0f);
+}
+
+
+float LGM1FGetTermCapletLogVariance(LGM1FTermStructureFloat *lgm_term_structure, float time_to_expiry, float underlying_length) {
+	PiecewiseFunctionFloat vol_process_t1, vol_process_t2;
+	vol_process_t1.term_structure_size = lgm_term_structure->lambda_term_structure->term_structure_size;
+	vol_process_t2.term_structure_size = lgm_term_structure->lambda_term_structure->term_structure_size;
+	vol_process_t1.term_structure_size = lgm_term_structure->lambda_term_structure->term_structure_size;
+	vol_process_t2.term_structure_size = lgm_term_structure->lambda_term_structure->term_structure_size;
+	vol_process_t1.piecewise_functions = (PolynomialExpFunctionSumFloat *)alloca(vol_process_t1.term_structure_size * sizeof(PolynomialExpFunctionSumFloat));
+	vol_process_t2.piecewise_functions = (PolynomialExpFunctionSumFloat *)alloca(vol_process_t2.term_structure_size * sizeof(PolynomialExpFunctionSumFloat));
+	vol_process_t1.time_term_structure = (float *)alloca(vol_process_t1.term_structure_size * sizeof(float));
+	vol_process_t2.time_term_structure = (float *)alloca(vol_process_t2.term_structure_size * sizeof(float));
+	for (uint i = 0; i < vol_process_t1.term_structure_size; ++i) {
+		vol_process_t1.piecewise_functions[i].number_of_polynomials = 0;
+		vol_process_t2.piecewise_functions[i].number_of_polynomials = 0;
+		for (uint j = 0; j < POLYNOMIAL_EXP_FUNCTION_SIZE; ++j) {
+			vol_process_t1.piecewise_functions[i].polynomials[j].coefficients = (float *)alloca(POLYNOMIAL_EXP_FUNCTION_NB_COEFS * sizeof(float));
+			vol_process_t1.piecewise_functions[i].polynomials[j].number_of_coefficients = 0;
+			vol_process_t1.piecewise_functions[i].exp_coefs[j] = 0;
+			vol_process_t2.piecewise_functions[i].polynomials[j].coefficients = (float *)alloca(POLYNOMIAL_EXP_FUNCTION_NB_COEFS * sizeof(float));
+			vol_process_t2.piecewise_functions[i].polynomials[j].number_of_coefficients = 0;
+			vol_process_t2.piecewise_functions[i].exp_coefs[j] = 0;
+		}
+	}
+
+	LGM1FDiscountFactorVolProcess(&vol_process_t1, lgm_term_structure->lambda_term_structure, lgm_term_structure->sigma_term_structure, time_to_expiry);
+	LGM1FDiscountFactorVolProcess(&vol_process_t2, lgm_term_structure->lambda_term_structure, lgm_term_structure->sigma_term_structure, time_to_expiry + underlying_length);
+
+	PiecewiseFunctionFloatMultiplyByConstant(&vol_process_t1, -1);
+	PiecewiseFunctionFloatAdd(&vol_process_t1, &vol_process_t1, &vol_process_t2); // at this point vol_process_t1 is the vol process of the shifted libor
+
+	PiecewiseFunctionFloatMultiply(&vol_process_t1, &vol_process_t1, &vol_process_t1);
+	return PiecewiseFunctionFloatIntegral(&vol_process_t1, 0, time_to_expiry);
+
+}
+
+
+float LGM1FGetCompoundedCapletLognormalVol(LGM1FTermStructureFloat *lgm_term_structure, float time_to_expiry, float underlying_length, uint number_of_compoundings) {
+	float daily_coverage = underlying_length / (float)number_of_compoundings;
+	PiecewiseFunctionFloat vol_process_ti, vol_process_tend;
+	vol_process_ti.term_structure_size = lgm_term_structure->lambda_term_structure->term_structure_size;
+	vol_process_tend.term_structure_size = lgm_term_structure->lambda_term_structure->term_structure_size;
+	vol_process_ti.term_structure_size = lgm_term_structure->lambda_term_structure->term_structure_size;
+	vol_process_tend.term_structure_size = lgm_term_structure->lambda_term_structure->term_structure_size;
+	vol_process_ti.piecewise_functions = (PolynomialExpFunctionSumFloat *)alloca(vol_process_ti.term_structure_size * sizeof(PolynomialExpFunctionSumFloat));
+	vol_process_tend.piecewise_functions = (PolynomialExpFunctionSumFloat *)alloca(vol_process_tend.term_structure_size * sizeof(PolynomialExpFunctionSumFloat));
+	for (uint i = 0; i < vol_process_ti.term_structure_size; ++i) {
+		for (uint j = 0; j < POLYNOMIAL_EXP_FUNCTION_SIZE; ++j) {
+			vol_process_ti.piecewise_functions[i].polynomials[j].coefficients = (float *)alloca(POLYNOMIAL_EXP_FUNCTION_NB_COEFS * sizeof(float));
+			vol_process_tend.piecewise_functions[i].polynomials[j].coefficients = (float *)alloca(POLYNOMIAL_EXP_FUNCTION_NB_COEFS * sizeof(float));
+		}
+	}
+
+	LGM1FDiscountFactorVolProcess(
+		&vol_process_tend, 
+		lgm_term_structure->lambda_term_structure, 
+		lgm_term_structure->sigma_term_structure, 
+		time_to_expiry + underlying_length
+		);
+	float integral_start = 0;
+	float integral_end = time_to_expiry;
+	float result = 0;
+	for (uint compounding_idx = 0; compounding_idx < number_of_compoundings; ++compounding_idx) {
+		LGM1FDiscountFactorVolProcess(
+			&vol_process_ti, 
+			lgm_term_structure->lambda_term_structure, 
+			lgm_term_structure->sigma_term_structure,
+			time_to_expiry + compounding_idx * daily_coverage
+			);
+		PiecewiseFunctionFloatMultiplyByConstant(&vol_process_tend, -1);
+		PiecewiseFunctionFloatAdd(&vol_process_ti, &vol_process_ti, &vol_process_tend);
+		PiecewiseFunctionFloatMultiply(&vol_process_ti, &vol_process_ti, &vol_process_ti);
+		result += PiecewiseFunctionFloatIntegral(&vol_process_ti, integral_start, integral_end);
+		integral_start = integral_end;
+		integral_end += daily_coverage;
+	}
+	return result;
+}
+
+void LGM1FSetMuTermStructureFromDiscountFactors(LGM1FTermStructureFloat *lgm_term_structure, float *log_discount_factors, float *d_log_discount_factors, float *d2_log_discount_factors) {
+	float *this_time = lgm_term_structure->tenors;
+	for (uint term_structure_idx = 0; term_structure_idx < lgm_term_structure->number_of_points; ++term_structure_idx) {
+		float *this_mu = lgm_term_structure->mu_term_structure->piecewise_functions[term_structure_idx].polynomials[0].coefficients;
+
+		++this_time;
 	}
 }
 
-void LGM1FSetLambdaTermStructure(LGM1FTermStructureFloat *result, float *lambdas) {
-	PiecewiseFunctionFloat *lambda_term_structure = result->lambda_term_structure;
-	PolynomialExpFunctionSumFloat *this_function = lambda_term_structure->piecewise_functions;
-	float *this_source_lambda = lambdas;
-	for (uint i = 0; i < lambda_term_structure->term_structure_size; ++i) {
-		this_function->number_of_polynomials = 1;
-		this_function->exp_coefs[0] = 0;
-		this_function->polynomials[0].coefficients[0] = *this_source_lambda++;
-		++this_function;
+struct CapletVolParams {
+	float normal_vol;
+	float lognormal_vol;
+	float coverage;
+	float time_to_expiry;
+	float forward;
+};
+
+void LGM1FFitSigmaTermStructureFromTermCaplets(
+	LGM1FTermStructureFloat *lgm_term_structure, 
+	CapletVolParams *vol_params,
+	uint number_of_vols,
+	float bisection_precision,
+	uint max_number_of_iterations
+	) {
+	
+	CapletVolParams *this_vol_params = vol_params;
+	const float sigma_upper_bound = 10;
+	const float sigma_lower_bound = 0;
+	for (uint vol_idx = 0; vol_idx < number_of_vols; ++vol_idx) {
+		float *sigma_to_fit = lgm_term_structure->sigma_term_structure->piecewise_functions->polynomials->coefficients;
+		float target_vol = this_vol_params->lognormal_vol;
+		float time_to_expiry = this_vol_params->time_to_expiry;
+		float target_log_variance = target_vol * target_vol * time_to_expiry / 2;
+
+		uint number_of_iterations = 0;
+		float error = INFINITY;
+		float upper_sigma = sigma_upper_bound;
+		float lower_sigma = sigma_lower_bound;
+		while ((number_of_iterations < max_number_of_iterations) && (error > bisection_precision)) {
+			float middle_sigma = (upper_sigma - lower_sigma) / 2;
+			*sigma_to_fit = middle_sigma;
+			float middle_log_variance = LGM1FGetTermCapletLogVariance(lgm_term_structure, time_to_expiry, this_vol_params->coverage);
+			error = fabsf(middle_log_variance - target_log_variance);
+			if (middle_log_variance < target_log_variance) {
+				lower_sigma = middle_sigma;
+			}
+			else {
+				upper_sigma = middle_sigma;
+			}
+			++number_of_iterations;
+		}
+		++this_vol_params;
 	}
 }
 
-
-float LGM1FGetTermCapletVol(LGM1FTermStructureFloat *lgm_term_structure, float time_to_expiry, float underlying_length) {
-	return 0;
+float NormalVolToLognormalVolFloat(float normal_vol, float forward, float time_to_expiry) {
+	float call_price = OptionForwardPremiumNormalVol(normal_vol, forward, forward, time_to_expiry, OptionType::CALL);
+	float implied_lognormal_vol = OptionForwardImpliedLognormalVolBrent(call_price, forward, forward, time_to_expiry, OptionType::CALL, 1e-7); 
+	return implied_lognormal_vol;
 }
 
+/**
+ * Set up to apply the Jamshidian trick to get the swaption vol
+ */
+float LGM1FGetSwaptionLognormalVol(LGM1FTermStructureFloat *lgm_term_structure, float time_to_expiry, float underlying_length, uint fixed_pay_frequency) {
+
+}
