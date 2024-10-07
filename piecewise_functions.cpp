@@ -75,6 +75,9 @@ void PolynomialFloatMultiply(PolynomialFloat *result, PolynomialFloat *A, Polyno
     // deg(A) = A->number_of_coefficients - 1
     if (!result->coefficients) return;
     result->number_of_coefficients = A->number_of_coefficients + B->number_of_coefficients - 1;
+    if ((A->number_of_coefficients < 2) || (B->number_of_coefficients < 2)) {
+        result->number_of_coefficients--;
+    }
     memset(result->coefficients, 0, result->number_of_coefficients * sizeof(float));
     for (uint a_idx = 0; a_idx < A->number_of_coefficients; ++a_idx) {
         for (uint b_idx = 0; b_idx < B->number_of_coefficients; ++b_idx) {
@@ -353,12 +356,12 @@ void PolynomialExpFunctionSumFloatDerivative(PolynomialExpFunctionSumFloat *resu
 }
 
 void PolynomialExpFloatSinglePrimitive(PolynomialFloat *result, PolynomialFloat *input, float exp_coef) {
-    result->number_of_coefficients = input->number_of_coefficients;
     if (fabsf(exp_coef) < 1e-9) {
         PolynomialFloatPrimitive(result, input, 0);
         return;
     }
     if (input->number_of_coefficients == 1) {
+        result->number_of_coefficients = 1;
         result->coefficients[0] = input->coefficients[0] / exp_coef;
         return;
     }
@@ -380,6 +383,7 @@ void PolynomialExpFloatSinglePrimitive(PolynomialFloat *result, PolynomialFloat 
     for (uint i = 0; i < input->number_of_coefficients; ++i) {
         result->coefficients[i] += input->coefficients[i] / exp_coef - temp_2.coefficients[i];
     }
+    result->number_of_coefficients = input->number_of_coefficients;
 
 }
 
@@ -553,6 +557,7 @@ float PiecewiseFunctionFloatIntegral(PiecewiseFunctionFloat *function, float int
     PolynomialExpFunctionSumFloat temp_primitive;
     for (uint i = 0; i < POLYNOMIAL_EXP_FUNCTION_SIZE; ++i) {
         temp_primitive.polynomials[i].coefficients = (float *)alloca(POLYNOMIAL_EXP_FUNCTION_NB_COEFS * sizeof(float));
+        temp_primitive.polynomials[i].number_of_coefficients = 0;
     }
     PolynomialExpFunctionSumFloatPrimitive(&temp_primitive, piecewise_function);
     result += temp_primitive(*this_time) - temp_primitive(integral_start);
@@ -577,7 +582,9 @@ float PiecewiseFunctionFloatIntegral(PiecewiseFunctionFloat *function, float int
  */
 void PiecewiseFunctionFloatGetExponentialForwardIntegral(PiecewiseFunctionFloat *result, PiecewiseFunctionFloat *input, float start) {
     result->term_structure_size = input->term_structure_size;
-    memcpy(result->time_term_structure, input->time_term_structure, input->term_structure_size * sizeof(float));
+    if (result != input) {
+        memcpy(result->time_term_structure, input->time_term_structure, input->term_structure_size * sizeof(float));
+    }
     PolynomialExpFunctionSumFloat temp_primitive;
 
     for (uint i = 0; i < POLYNOMIAL_EXP_FUNCTION_SIZE; ++i) {
