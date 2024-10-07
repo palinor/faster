@@ -58,7 +58,7 @@ struct DisplayData {
 	uint underlying_idx = 0;
 	OptionModelParametersShiftedSabrFloat *interpolated_shifted_sabr_parameters = nullptr;
 
-	LGM1FTermStructureFloat lgm_term_structure = {0};
+	LGM1FTermStructureFloat lgm_term_structure = { 0 };
 
 };
 
@@ -195,6 +195,9 @@ void displayDataInit(
 	PiecewiseFunctionFloatAlloc(data->lgm_term_structure.lambda_term_structure, term_structure_size, arena);
 	PiecewiseFunctionFloatAlloc(data->lgm_term_structure.mu_term_structure, term_structure_size, arena);
 	PiecewiseFunctionFloatAlloc(data->lgm_term_structure.sigma_term_structure, term_structure_size, arena);
+	memcpy(data->lgm_term_structure.lambda_term_structure->time_term_structure, data->lgm_term_structure.tenors, term_structure_size * sizeof(float));
+	memcpy(data->lgm_term_structure.mu_term_structure->time_term_structure, data->lgm_term_structure.tenors, term_structure_size * sizeof(float));
+	memcpy(data->lgm_term_structure.sigma_term_structure->time_term_structure, data->lgm_term_structure.tenors, term_structure_size * sizeof(float));
 	data->lgm_term_structure.lambdas = (float **)ArenaGetMemory(term_structure_size * sizeof(float *), arena);
 	data->lgm_term_structure.sigmas = (float **)ArenaGetMemory(term_structure_size * sizeof(float *), arena);
 	data->lgm_term_structure.mus = (float **)ArenaGetMemory(term_structure_size * sizeof(float *), arena);
@@ -599,6 +602,43 @@ void imGuiRenderLoop(DisplayData *data) {
 			sigmas[i] = *(data->lgm_term_structure.sigmas[i]);
 			mus[i] = *(data->lgm_term_structure.mus[i]);
 		}
+		CapletVolParams target_caplets[16];
+		const float caplet_expiries[16] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 17, 20, 25, 29 };
+		for (uint i = 0; i < 16; ++i) {
+			float forward = SwapRateYieldCurveF(data->yield_curve, caplet_expiries[i], 1, 1);
+			InterpolateShiftedSabrParametersFloat(
+				interpolated_parameters,
+				caplet_expiries[i],
+				1,
+				&(data->shifted_sabr_params)
+			);
+			target_caplets[i].normal_vol = ShiftedSabrImpliedNormalVol(
+				forward,
+				forward,
+				caplet_expiries[i],
+				interpolated_parameters->sigma_0,
+				interpolated_parameters->alpha,
+				interpolated_parameters->beta,
+				interpolated_parameters->rho,
+				interpolated_parameters->zeta
+			);
+			target_caplets[i].coverage = 1;
+			target_caplets[i].forward = forward;
+			target_caplets[i].time_to_expiry = caplet_expiries[i];
+			target_caplets[i].lognormal_vol = NormalVolToLognormalVolFloat(
+				target_caplets[i].normal_vol,
+				target_caplets[i].forward,
+				target_caplets[i].time_to_expiry
+			);
+		}
+
+		LGM1FFitSigmaTermStructureFromTermCaplets(
+			&(data->lgm_term_structure),
+			target_caplets,
+			16,
+			1e-5f,
+			20
+		);
 		ImPlot::PlotLine("Lambda", data->lgm_term_structure.tenors, lambdas, data->lgm_term_structure.number_of_points);
 		ImPlot::PlotLine("Mu", data->lgm_term_structure.tenors, mus, data->lgm_term_structure.number_of_points);
 		ImPlot::PlotLine("Sigma", data->lgm_term_structure.tenors, sigmas, data->lgm_term_structure.number_of_points);
