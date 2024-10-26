@@ -2,7 +2,7 @@
 	"version": "0.2.0",
 	"configurations": [
 		{
-			"type": "lldb",
+			"type": "cppdbg",
 			"request": "launch",
 			"name": "Debug",
 			"program": "${workspaceFolder}/${fileBasenameNoExtension}",
@@ -14,7 +14,7 @@
 			//"stopAtEntry": false
 		},
 		{
-			"type": "lldb",
+			"type": "cppdbg",
 			"request": "launch",
 			"name": "Debug tests",
 			"program": "${workspaceFolder}/debug/tests.out",
@@ -24,7 +24,7 @@
 		},
 
 		{
-			"type": "lldb",
+			"type": "cppdbg",
 			"request": "launch",
 			"name": "Debug release",
 			"program": "${workspaceFolder}/${fileBasenameNoExtension}",
