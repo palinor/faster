@@ -74,16 +74,21 @@ void PolynomialFloatMultiply(PolynomialFloat *result, PolynomialFloat *A, Polyno
     // deg(result) = deg(A) + deg(B)
     // deg(A) = A->number_of_coefficients - 1
     if (!result->coefficients) return;
-    result->number_of_coefficients = A->number_of_coefficients + B->number_of_coefficients - 1;
-    if ((A->number_of_coefficients < 2) || (B->number_of_coefficients < 2)) {
-        result->number_of_coefficients--;
+    PolynomialFloat temp_result;
+    temp_result.number_of_coefficients = A->number_of_coefficients + B->number_of_coefficients - 1;
+    assert (temp_result.number_of_coefficients > 0);
+    if ((A->number_of_coefficients < 2) != (B->number_of_coefficients < 2)) {
+        temp_result.number_of_coefficients--;
     }
-    memset(result->coefficients, 0, result->number_of_coefficients * sizeof(float));
+    temp_result.coefficients = (float *)alloca(temp_result.number_of_coefficients * sizeof(float));
+    memset(temp_result.coefficients, 0, temp_result.number_of_coefficients * sizeof(float));
     for (uint a_idx = 0; a_idx < A->number_of_coefficients; ++a_idx) {
         for (uint b_idx = 0; b_idx < B->number_of_coefficients; ++b_idx) {
-            result->coefficients[a_idx + b_idx] += A->coefficients[a_idx] * B->coefficients[b_idx];
+            temp_result.coefficients[a_idx + b_idx] += A->coefficients[a_idx] * B->coefficients[b_idx];
         }
     }
+    result->number_of_coefficients = temp_result.number_of_coefficients;
+    memcpy(result->coefficients, temp_result.coefficients, result->number_of_coefficients * sizeof(float));
 }
 
 /**
@@ -243,30 +248,65 @@ uint CountDistinctFloatSortedArrays(float *list_1, uint list_1_length, float *li
  * We assume that both A and B have their elements sorted by increasing value of exp_coef, and that result has already been allocated.
  */
 void PolynomialExpFunctionSumFloatAdd(PolynomialExpFunctionSumFloat *result, PolynomialExpFunctionSumFloat *A, PolynomialExpFunctionSumFloat *B) {
-    assert(result->number_of_polynomials == CountDistinctFloatSortedArrays(A->exp_coefs, A->number_of_polynomials, B->exp_coefs, B->number_of_polynomials));
+    uint n_distinct_exp_coefs = CountDistinctFloatSortedArrays(A->exp_coefs, A->number_of_polynomials, B->exp_coefs, B->number_of_polynomials);
+    assert (n_distinct_exp_coefs <= POLYNOMIAL_EXP_FUNCTION_SIZE);
     PolynomialFloat *a_polynomial = A->polynomials;
     float *a_exp_coef = A->exp_coefs;
     PolynomialFloat *b_polynomial = B->polynomials;
     float *b_exp_coef = B->exp_coefs;
-    PolynomialFloat *result_polynomial = result->polynomials;
-    float *result_exp_coef = result->exp_coefs;
-    for (uint i = 0; i < result->number_of_polynomials; ++i) {
-        if (fabs(*a_exp_coef - *b_exp_coef) < 1e-9f) {
+
+    PolynomialExpFunctionSumFloat temp_result;
+    temp_result.number_of_polynomials = n_distinct_exp_coefs;
+    for (uint i = 0; i < n_distinct_exp_coefs; ++i) {
+        temp_result.polynomials[i].coefficients = (float *)alloca(sizeof(float) * POLYNOMIAL_EXP_FUNCTION_NB_COEFS);
+        memset(temp_result.polynomials[i].coefficients, 0, sizeof(float) * POLYNOMIAL_EXP_FUNCTION_NB_COEFS);
+    }
+    PolynomialFloat *result_polynomial = temp_result.polynomials;
+    float *result_exp_coef = temp_result.exp_coefs;
+    uint a_exp_count = 0;
+    uint b_exp_count = 0;
+    for (uint i = 0; i < n_distinct_exp_coefs; ++i) {
+        if (!(a_exp_count < A->number_of_polynomials)) {
+            *result_exp_coef = *b_exp_coef++;
+            result_polynomial->number_of_coefficients = b_polynomial->number_of_coefficients;
+            memcpy(result_polynomial->coefficients, (b_polynomial++)->coefficients, sizeof(float) * result_polynomial->number_of_coefficients);
+            ++b_exp_count;
+        } else if (!(b_exp_count < B->number_of_polynomials)) {
+            *result_exp_coef = *a_exp_coef++;
+            result_polynomial->number_of_coefficients = a_polynomial->number_of_coefficients;
+            memcpy(result_polynomial->coefficients, (a_polynomial++)->coefficients, sizeof(float) * result_polynomial->number_of_coefficients);
+            ++a_exp_count;
+        } else if (fabs(*a_exp_coef - *b_exp_coef) < 1e-9f) {
             PolynomialFloatAdd(result_polynomial, a_polynomial, b_polynomial);
             *result_exp_coef = *a_exp_coef;
             ++a_polynomial;
             ++a_exp_coef;
             ++b_polynomial;
             ++b_exp_coef;
+            ++a_exp_count;
+            ++b_exp_count;
         } else if (*a_exp_coef < *b_exp_coef) {
             *result_exp_coef = *a_exp_coef++;
-            memcpy(result_polynomial, a_polynomial++, sizeof(PolynomialFloat));
+            result_polynomial->number_of_coefficients = a_polynomial->number_of_coefficients;
+            memcpy(result_polynomial->coefficients, (a_polynomial++)->coefficients, sizeof(float) * result_polynomial->number_of_coefficients);
+            ++a_exp_count;
         } else {
             *result_exp_coef = *b_exp_coef++;
-            memcpy(result_polynomial, b_polynomial++, sizeof(PolynomialFloat));
+            result_polynomial->number_of_coefficients = b_polynomial->number_of_coefficients;
+            memcpy(result_polynomial->coefficients, (b_polynomial++)->coefficients, sizeof(float) * result_polynomial->number_of_coefficients);
+            ++b_exp_count;
         }
         ++result_exp_coef;
         ++result_polynomial;
+    }
+    result->number_of_polynomials = n_distinct_exp_coefs;
+    memcpy(result->exp_coefs, temp_result.exp_coefs, n_distinct_exp_coefs * sizeof(float));
+    PolynomialFloat *source_polynomial = temp_result.polynomials;
+    PolynomialFloat *dest_polynomial = result->polynomials;
+    for (uint i = 0; i < n_distinct_exp_coefs; ++i) {
+        uint n_coefs = source_polynomial->number_of_coefficients;
+        dest_polynomial->number_of_coefficients = n_coefs;
+        memcpy((dest_polynomial++)->coefficients, (source_polynomial++)->coefficients, n_coefs * sizeof(float));
     }
 }
 
@@ -276,47 +316,52 @@ void PolynomialExpFunctionSumFloatAdd(PolynomialExpFunctionSumFloat *result, Pol
  *
  */
 void PolynomialExpFunctionSumFloatMultiply(PolynomialExpFunctionSumFloat *result, PolynomialExpFunctionSumFloat *A, PolynomialExpFunctionSumFloat *B) {
-    uint number_distinct_coefs = 0;
+    uint coef_list_size = 1;
     float scratch_exp_coef_list[2 * POLYNOMIAL_EXP_FUNCTION_SIZE];
+    memset(scratch_exp_coef_list, 0, 2 * POLYNOMIAL_EXP_FUNCTION_SIZE * sizeof(float));
     assert(2 * POLYNOMIAL_EXP_FUNCTION_SIZE > A->number_of_polynomials + B->number_of_polynomials);
     float *a_coef = A->exp_coefs;
+    scratch_exp_coef_list[0] = *a_coef + B->exp_coefs[0];
     for (uint i = 0; i < A->number_of_polynomials; ++i) {
         float *b_coef = B->exp_coefs;
         for (uint j = 0; j < B->number_of_polynomials; ++j) {
             bool is_duplicate = false;
             float this_coef = *a_coef + *b_coef;
             float *scratch_exp_coef = scratch_exp_coef_list;
-            for (uint k = 0; k < number_distinct_coefs; ++k) {
-                if (fabsf(this_coef - *scratch_exp_coef++) > 1e-9f) {
+            for (uint k = 0; k < coef_list_size; ++k) {
+                if (fabsf(this_coef - *scratch_exp_coef++) < 1e-9f) {
                     is_duplicate = true;
                     break;
                 }
             }
             if (!is_duplicate) {
-                scratch_exp_coef_list[number_distinct_coefs++] = this_coef;
+                scratch_exp_coef_list[coef_list_size++ - 1] = this_coef;
             }
             ++b_coef;
         }
         ++a_coef;
     }
 
-    // sort by exp_coef (insert sort) while keeping polynomial sizes in line with their respective coefficients
-    for (uint i = 1; i < number_distinct_coefs; ++i) {
+    for (uint i = 1; i < coef_list_size; ++i) {
         float this_value = scratch_exp_coef_list[i];
         uint j = i;
-        while ((scratch_exp_coef_list[j] > this_value) && (j > 0)) {
+        while ((j > 0) && (scratch_exp_coef_list[j - 1] > this_value)) {
             scratch_exp_coef_list[j] = scratch_exp_coef_list[j - 1];
+            scratch_exp_coef_list[j - 1] = this_value;
             --j;
         }
     }
 
-    memcpy(result->exp_coefs, scratch_exp_coef_list, number_distinct_coefs * sizeof(float));
-    result->number_of_polynomials = number_distinct_coefs;
+    PolynomialFloat temp_polynomial_results[POLYNOMIAL_EXP_FUNCTION_SIZE];
     // init all the polynomials to 1.
-    for (uint i = 0; i < number_distinct_coefs; ++i) {
-        memset(result->polynomials[i].coefficients, 0, POLYNOMIAL_EXP_FUNCTION_NB_COEFS * sizeof(float));
-        result->polynomials[i].coefficients[0] = 1;
+    assert (coef_list_size <= POLYNOMIAL_EXP_FUNCTION_SIZE);
+    for (uint i = 0; i < coef_list_size; ++i) {
+        temp_polynomial_results[i].coefficients = (float *)alloca(POLYNOMIAL_EXP_FUNCTION_NB_COEFS * sizeof(float));
+        memset(temp_polynomial_results[i].coefficients, 0, POLYNOMIAL_EXP_FUNCTION_NB_COEFS * sizeof(float));
+        temp_polynomial_results[i].coefficients[0] = 1;
+        temp_polynomial_results[i].number_of_coefficients = 1;
     }
+
     for (uint i = 0; i < A->number_of_polynomials; ++i) {
         for (uint j = 0; j < B->number_of_polynomials; ++j) {
             float exp_coef = A->exp_coefs[i] + B->exp_coefs[j];
@@ -325,10 +370,16 @@ void PolynomialExpFunctionSumFloatMultiply(PolynomialExpFunctionSumFloat *result
             while (fabsf(exp_coef - *this_exp_coef++) > 1e-9f) {
                 ++exp_coef_index;
             }
-            PolynomialFloatMultiply(result->polynomials + exp_coef_index, result->polynomials + exp_coef_index, A->polynomials + i);
-            PolynomialFloatMultiply(result->polynomials + exp_coef_index, result->polynomials + exp_coef_index, B->polynomials + j);
+            PolynomialFloatMultiply(temp_polynomial_results + exp_coef_index, temp_polynomial_results + exp_coef_index, A->polynomials + i);
+            PolynomialFloatMultiply(temp_polynomial_results + exp_coef_index, temp_polynomial_results + exp_coef_index, B->polynomials + j);
         }
     }
+    for (uint i = 0; i < coef_list_size; ++i) {
+        result->polynomials[i].number_of_coefficients = temp_polynomial_results[i].number_of_coefficients;
+        memcpy(result->polynomials[i].coefficients, temp_polynomial_results[i].coefficients, POLYNOMIAL_EXP_FUNCTION_NB_COEFS * sizeof(float));
+    }
+    memcpy(result->exp_coefs, scratch_exp_coef_list, coef_list_size * sizeof(float));
+    result->number_of_polynomials = coef_list_size;
 }
 
 
@@ -394,7 +445,6 @@ void PolynomialExpFunctionSumFloatPrimitive(PolynomialExpFunctionSumFloat *resul
     PolynomialFloat *input_polynomial = input->polynomials;
     float *exp_coef = input->exp_coefs;
     for (uint i = 0; i < input->number_of_polynomials; ++i) {
-        memset(result_polynomial->coefficients, 0, POLYNOMIAL_EXP_FUNCTION_NB_COEFS * sizeof(float));
         PolynomialExpFloatSinglePrimitive(result_polynomial, input_polynomial, *exp_coef);
         ++result_polynomial;
         ++input_polynomial;
@@ -455,17 +505,18 @@ void PiecewiseFunctionFloatAlloc(PiecewiseFunctionFloat *result, uint term_struc
 
 void PiecewiseFunctionFloatAdd(PiecewiseFunctionFloat *result, PiecewiseFunctionFloat *A, PiecewiseFunctionFloat *B) {
     assert(A->term_structure_size == B->term_structure_size);
-    result->term_structure_size = A->term_structure_size;
+    uint term_structure_size = A->term_structure_size;
     float *a_time = A->time_term_structure;
     float *b_time = B->time_term_structure;
     PolynomialExpFunctionSumFloat *result_function = result->piecewise_functions;
     PolynomialExpFunctionSumFloat *a_function = A->piecewise_functions;
     PolynomialExpFunctionSumFloat *b_function = B->piecewise_functions;
 
-    for (uint i = 0; i < result->term_structure_size; ++i) {
+    for (uint i = 0; i < term_structure_size; ++i) {
         assert(fabsf(*a_time++ - *b_time++) < 1e-9f);
         PolynomialExpFunctionSumFloatAdd(result_function++, a_function++, b_function++);
     }
+    result->term_structure_size = term_structure_size;
 }
 
 void PiecewiseFunctionFloatMultiply(PiecewiseFunctionFloat *result, PiecewiseFunctionFloat *A, PiecewiseFunctionFloat *B) {

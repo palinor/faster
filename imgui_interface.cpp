@@ -591,17 +591,16 @@ void imGuiRenderLoop(DisplayData *data) {
 	ImGui::Begin("LGM Term Structure");
 	ImGui::PushItemWidth(data->slider_width);
 	static float constant_lambda_value;
-	ImGui::SliderFloat("Lambda", &constant_lambda_value, 0.0001, 0.1);
+	const float min_lambda_value = 0.001;
+	if (constant_lambda_value < min_lambda_value) {
+		constant_lambda_value = min_lambda_value;
+	}
+	ImGui::SliderFloat("Lambda", &constant_lambda_value, min_lambda_value, 5);
 	LGM1FSetConstantLambda(&(data->lgm_term_structure), constant_lambda_value);
 	if (ImPlot::BeginPlot("LGM Term Structure")) {
 		static float lambdas[16];
 		static float sigmas[16];
 		static float mus[16];
-		for (uint i = 0; i < data->lgm_term_structure.number_of_points; ++i) {
-			lambdas[i] = *(data->lgm_term_structure.lambdas[i]);
-			sigmas[i] = *(data->lgm_term_structure.sigmas[i]);
-			mus[i] = *(data->lgm_term_structure.mus[i]);
-		}
 		CapletVolParams target_caplets[16];
 		const float caplet_expiries[16] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 17, 20, 25, 29 };
 		for (uint i = 0; i < 16; ++i) {
@@ -639,6 +638,11 @@ void imGuiRenderLoop(DisplayData *data) {
 			1e-5f,
 			20
 		);
+		for (uint i = 0; i < data->lgm_term_structure.number_of_points; ++i) {
+			lambdas[i] = *(data->lgm_term_structure.lambdas[i]);
+			sigmas[i] = *(data->lgm_term_structure.sigmas[i]);
+			mus[i] = *(data->lgm_term_structure.mus[i]);
+		}
 		ImPlot::PlotLine("Lambda", data->lgm_term_structure.tenors, lambdas, data->lgm_term_structure.number_of_points);
 		ImPlot::PlotLine("Mu", data->lgm_term_structure.tenors, mus, data->lgm_term_structure.number_of_points);
 		ImPlot::PlotLine("Sigma", data->lgm_term_structure.tenors, sigmas, data->lgm_term_structure.number_of_points);

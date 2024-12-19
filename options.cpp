@@ -746,7 +746,7 @@ void LGM1FFitSigmaTermStructureFromTermCaplets(
 	) {
 	
 	CapletVolParams *this_vol_params = vol_params;
-	const float sigma_upper_bound = 10;
+	const float sigma_upper_bound = 0.5;
 	const float sigma_lower_bound = 0;
 	for (uint vol_idx = 0; vol_idx < number_of_vols; ++vol_idx) {
 		float *sigma_to_fit = lgm_term_structure->sigma_term_structure->piecewise_functions->polynomials->coefficients;
