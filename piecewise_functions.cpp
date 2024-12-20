@@ -616,7 +616,7 @@ float PiecewiseFunctionFloatIntegral(PiecewiseFunctionFloat *function, float int
     for (uint i = term_structure_idx; i < function->term_structure_size; ++i) {
         last_time = *this_time++;
         ++piecewise_function;
-        if (*this_time > integral_end) {
+        if (*this_time > integral_end - 1e-5f) {
             break;
         }
         PolynomialExpFunctionSumFloatPrimitive(&temp_primitive, piecewise_function);

@@ -538,6 +538,7 @@ void LGM1FCapitalLambda(PiecewiseFunctionFloat *result, PiecewiseFunctionFloat *
 	PolynomialExpFunctionSumFloat *this_destination_function = temp_backward.piecewise_functions;
 	for (uint i = 0; i < lambda_term_structure->term_structure_size; ++i) {
 		this_destination_function->number_of_polynomials = this_source_function->number_of_polynomials;
+		memcpy(this_destination_function->exp_coefs, this_source_function->exp_coefs, this_source_function->number_of_polynomials * sizeof(float));
 		PolynomialFloat *this_source_polynomial = this_source_function->polynomials;
 		PolynomialFloat *this_destination_polynomial = this_destination_function->polynomials;
 		for (uint j = 0; j < this_source_function->number_of_polynomials; ++j) {
@@ -554,18 +555,23 @@ void LGM1FCapitalLambda(PiecewiseFunctionFloat *result, PiecewiseFunctionFloat *
 		++this_destination_function;
 		++this_source_function;
 	}
-	PiecewiseFunctionFloatGetExponentialForwardIntegral(result, lambda_term_structure, 0);
+	// at this point temp_backward is f : t -> -lambda (piecewise)
+	// we turn it in to g : t -> exp(-int_0^t lambda_v dv)
+	PiecewiseFunctionFloatGetExponentialForwardIntegral(result, &temp_backward, 0);
+	// and then integrate to get G its primitive
 	PiecewiseFunctionFloatPrimitive(result, result);
-	PiecewiseFunctionFloatGetExponentialBackwardIntegral(&temp_backward, &temp_backward, 0);
+	// now we use temp_backward to store exp(int_0^t lambda_v dv)
+	PiecewiseFunctionFloatGetExponentialForwardIntegral(&temp_backward, lambda_term_structure, 0);
 	float epsilon = 1e-6f; // just to make sure we stay on the left side of the interval
 	float this_integral_value = (*result)(T_end - epsilon);
+	// we evaluate the integral from t to T_end as G(T_end) - G(t)
 	PiecewiseFunctionFloatMultiplyByConstant(result, -1);
 	PiecewiseFunctionFloatAddConstant(result, this_integral_value);
+	// and multiply by the remaining function
 	PiecewiseFunctionFloatMultiply(result, result, &temp_backward);
 }
 
 
-//todo(AION) there is a bug in here somewhere: variance always evaluates to 0
 void LGM1FDiscountFactorVolProcess(PiecewiseFunctionFloat *result, PiecewiseFunctionFloat *lambda_term_structure, PiecewiseFunctionFloat *sigma_term_structure, float T_end) {
 	LGM1FCapitalLambda(result, lambda_term_structure, T_end);
 	PiecewiseFunctionFloatMultiply(result, result, sigma_term_structure);
@@ -740,20 +746,21 @@ struct CapletVolParams {
 void LGM1FFitSigmaTermStructureFromTermCaplets(
 	LGM1FTermStructureFloat *lgm_term_structure, 
 	CapletVolParams *vol_params,
-	uint number_of_vols,
 	float bisection_precision,
 	uint max_number_of_iterations
 	) {
 	
 	CapletVolParams *this_vol_params = vol_params;
-	const float sigma_upper_bound = 0.5;
+	const float sigma_upper_bound = 0.1;
 	const float sigma_lower_bound = 0;
+	uint number_of_vols = lgm_term_structure->number_of_points - 2;
 	for (uint vol_idx = 0; vol_idx < number_of_vols; ++vol_idx) {
-		float *sigma_to_fit = lgm_term_structure->sigma_term_structure->piecewise_functions->polynomials->coefficients;
-		float target_vol = this_vol_params->lognormal_vol;
+		float *sigma_to_fit = lgm_term_structure->sigma_term_structure->piecewise_functions[vol_idx].polynomials->coefficients;
+		float target_vol = this_vol_params->normal_vol;
 		float time_to_expiry = this_vol_params->time_to_expiry;
-		float target_log_variance = target_vol * target_vol * time_to_expiry / 2;
-
+		float target_variance = target_vol * target_vol * time_to_expiry;
+		float coverage = this_vol_params->coverage;
+		float forward = this_vol_params->forward;
 		uint number_of_iterations = 0;
 		float error = INFINITY;
 		float upper_sigma = sigma_upper_bound;
@@ -762,8 +769,10 @@ void LGM1FFitSigmaTermStructureFromTermCaplets(
 			float middle_sigma = (upper_sigma - lower_sigma) / 2;
 			*sigma_to_fit = middle_sigma;
 			float middle_log_variance = LGM1FGetTermCapletLogVariance(lgm_term_structure, time_to_expiry, this_vol_params->coverage);
-			error = fabsf(middle_log_variance - target_log_variance);
-			if (middle_log_variance < target_log_variance) {
+			float middle_variance = expf(middle_log_variance) - 1;
+			middle_variance *= (1 + coverage * forward) * (1 + coverage * forward) / (coverage * coverage);
+			error = fabsf(middle_variance - target_variance);
+			if (middle_variance < target_variance) {
 				lower_sigma = middle_sigma;
 			}
 			else {
@@ -777,7 +786,7 @@ void LGM1FFitSigmaTermStructureFromTermCaplets(
 
 float NormalVolToLognormalVolFloat(float normal_vol, float forward, float time_to_expiry) {
 	float call_price = OptionForwardPremiumNormalVol(normal_vol, forward, forward, time_to_expiry, OptionType::CALL);
-	float implied_lognormal_vol = OptionForwardImpliedLognormalVolBrent(call_price, forward, forward, time_to_expiry, OptionType::CALL, 1e-7); 
+	float implied_lognormal_vol = OptionForwardImpliedLognormalVolBrent(call_price, forward, forward, time_to_expiry, OptionType::CALL, 2e-7); 
 	return implied_lognormal_vol;
 }
 

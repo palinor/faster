@@ -111,10 +111,10 @@ void displayDataInit(
 	data->shifted_sabr_params.times_to_expiry = times_to_expiry;
 	data->shifted_sabr_params.underlying_maturity_length = underlying_maturity_length;
 
-	const float starting_sigma_0 = 0.03;
-	const float starting_alpha = 0.22;
-	const float starting_beta = 0.4;
-	const float starting_rho = 0.01;
+	const float starting_sigma_0 = 0.01;
+	const float starting_alpha = 1;
+	const float starting_beta = 0.15;
+	const float starting_rho = 0.2;
 	const float starting_zeta = 0.03;
 
 	OptionModelParametersShiftedSabrFloat *this_parameter_set = data->shifted_sabr_params.parameters;
@@ -445,7 +445,7 @@ void imGuiRenderLoop(DisplayData *data) {
 	char parameter_label[32];
 	snprintf(parameter_label, (uint)32, "Sigma0");
 	ImGui::PushItemWidth(data->slider_width);
-	ImGui::SliderFloat(parameter_label, &(shifted_sabr_params->sigma_0), 0.0001, 1.5);
+	ImGui::SliderFloat(parameter_label, &(shifted_sabr_params->sigma_0), 0.0001, 0.1);
 
 	snprintf(parameter_label, (uint)32, "Alpha");
 	ImGui::PushItemWidth(data->slider_width);
@@ -598,23 +598,27 @@ void imGuiRenderLoop(DisplayData *data) {
 	ImGui::SliderFloat("Lambda", &constant_lambda_value, min_lambda_value, 5);
 	LGM1FSetConstantLambda(&(data->lgm_term_structure), constant_lambda_value);
 	if (ImPlot::BeginPlot("LGM Term Structure")) {
-		static float lambdas[16];
-		static float sigmas[16];
-		static float mus[16];
-		CapletVolParams target_caplets[16];
-		const float caplet_expiries[16] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 17, 20, 25, 29 };
-		for (uint i = 0; i < 16; ++i) {
-			float forward = SwapRateYieldCurveF(data->yield_curve, caplet_expiries[i], 1, 1);
+		const uint term_struct_size = 16;
+		static float lambdas[term_struct_size];
+		static float sigmas[term_struct_size];
+		static float mus[term_struct_size];
+		CapletVolParams target_caplets[term_struct_size];
+		float caplet_expiries[term_struct_size] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 17, 20, 25, 29 };
+		uint number_of_caplets = data->lgm_term_structure.number_of_points - 2;
+		assert (term_struct_size > number_of_caplets);
+		float *tenors = data->lgm_term_structure.tenors + 1;
+		for (uint i = 0; i < number_of_caplets; ++i) {
+			float forward = SwapRateYieldCurveF(data->yield_curve, tenors[i], 1, 1);
 			InterpolateShiftedSabrParametersFloat(
 				interpolated_parameters,
-				caplet_expiries[i],
+				tenors[i],
 				1,
 				&(data->shifted_sabr_params)
 			);
 			target_caplets[i].normal_vol = ShiftedSabrImpliedNormalVol(
 				forward,
 				forward,
-				caplet_expiries[i],
+				tenors[i],
 				interpolated_parameters->sigma_0,
 				interpolated_parameters->alpha,
 				interpolated_parameters->beta,
@@ -623,18 +627,12 @@ void imGuiRenderLoop(DisplayData *data) {
 			);
 			target_caplets[i].coverage = 1;
 			target_caplets[i].forward = forward;
-			target_caplets[i].time_to_expiry = caplet_expiries[i];
-			target_caplets[i].lognormal_vol = NormalVolToLognormalVolFloat(
-				target_caplets[i].normal_vol,
-				target_caplets[i].forward,
-				target_caplets[i].time_to_expiry
-			);
+			target_caplets[i].time_to_expiry = tenors[i];
 		}
 
 		LGM1FFitSigmaTermStructureFromTermCaplets(
 			&(data->lgm_term_structure),
 			target_caplets,
-			16,
 			1e-5f,
 			20
 		);
