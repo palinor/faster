@@ -751,7 +751,7 @@ void LGM1FFitSigmaTermStructureFromTermCaplets(
 	) {
 	
 	CapletVolParams *this_vol_params = vol_params;
-	const float sigma_upper_bound = 0.1;
+	const float sigma_upper_bound = 1;
 	const float sigma_lower_bound = 0;
 	uint number_of_vols = lgm_term_structure->number_of_points - 2;
 	for (uint vol_idx = 0; vol_idx < number_of_vols; ++vol_idx) {
@@ -794,5 +794,4 @@ float NormalVolToLognormalVolFloat(float normal_vol, float forward, float time_t
  * Set up to apply the Jamshidian trick to get the swaption vol
  */
 float LGM1FGetSwaptionLognormalVol(LGM1FTermStructureFloat *lgm_term_structure, float time_to_expiry, float underlying_length, uint fixed_pay_frequency) {
-
 }
