@@ -7,7 +7,11 @@
  */
 
 #include <math.h>
+#ifdef __APPLE__
+#include "piecewise_functions.h"
+#else
 #include "piecewise_functions.cpp"
+#endif
 
 enum class OptionType {
 	CALL,
@@ -794,4 +798,5 @@ float NormalVolToLognormalVolFloat(float normal_vol, float forward, float time_t
  * Set up to apply the Jamshidian trick to get the swaption vol
  */
 float LGM1FGetSwaptionLognormalVol(LGM1FTermStructureFloat *lgm_term_structure, float time_to_expiry, float underlying_length, uint fixed_pay_frequency) {
+    return 0;
 }

@@ -1,12 +1,12 @@
 #include <math.h>
 #include <stdio.h>
-#ifdef __APPLE__
-#include "imgui/backends/imgui_impl_metal.h"
-#include "implot/implot.h"
-#include "imgui/examples/example_apple_metal/options.h"
-#include "imgui/examples/example_apple_metal/yield_curve.h"
-#else
 #define IMGUI_DEFINE_MATH_OPERATORS
+#ifdef __APPLE__
+#include "implot/implot.h"
+#include "options.h"
+#include "yield_curve.h"
+#include "arena_allocator.h"
+#else
 #include "imgui/imgui_draw.cpp"
 #include "imgui/imgui_tables.cpp"
 #include "imgui/imgui_widgets.cpp"
@@ -58,12 +58,12 @@ struct DisplayData {
 	uint underlying_idx = 0;
 	OptionModelParametersShiftedSabrFloat *interpolated_shifted_sabr_parameters = nullptr;
 
-	LGM1FTermStructureFloat lgm_term_structure = { 0 };
+	LGM1FTermStructureFloat lgm_term_structure = {0};
 
 };
 
 void displayDataInit(
-	DisplayData *data,
+	volatile DisplayData *data,
 	uint number_of_fras,
 	uint number_of_swaps,
 	uint number_of_plot_points,
@@ -231,7 +231,7 @@ void imGuiRenderLoop(DisplayData *data) {
 
 	ImGui::Begin("Input yield curve data");
 
-	static bool model_is_selected[2] = { false, false };
+	static bool model_is_selected[2] = {false, false};
 	if (ImGui::TreeNode("Yield Curve Model Type")) {
 		if (ImGui::Selectable("Short Rate", model_is_selected[0])) {
 			if (!ImGui::GetIO().KeyCtrl) {
@@ -251,7 +251,8 @@ void imGuiRenderLoop(DisplayData *data) {
 
 	if (model_is_selected[0]) {
 		data->curve_type = DisplayData::SHORT_RATE;
-	} else if (model_is_selected[1]) {
+	}
+	else if (model_is_selected[1]) {
 		data->curve_type = DisplayData::OVERNIGHT_FORWARD;
 	}
 

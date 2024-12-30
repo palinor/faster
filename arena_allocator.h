@@ -6,6 +6,9 @@
  * 
  */
 #include <cstdlib>
+#ifndef uint
+typedef unsigned int uint;
+#endif
 
 struct Arena;
 Arena *ArenaAllocate(uint block_size, uint starting_max_blocks);
