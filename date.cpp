@@ -9,6 +9,11 @@ enum Month {
 	BLANK, JANUARY, FEBRUARY, MARCH, APRIL, MAY, JUNE, JULY, AUGUST, SEPTEMBER, OCTOBER, NOVEMBER, DECEMBER
 };
 
+enum MonthCode {
+	BLANK, F, G, H, J, K, M, N, Q, U, V, X, Z
+};
+
+
 bool IsLeapYear(uint year) {
 	if (!(year % 400)) {
 		return true;
@@ -566,24 +571,94 @@ int CalendarDays(Date *start_date, Date *end_date, Calendar calendar) {
 	}
 }
 
-inline float CoverageAct365(Date *start_date, Date *end_date) {
+//note(AION) there is probably a bug in here somewhere
+bool IsHoliday(Date *date, Calendar calendar) {
+	Date previous_day;
+	previous_day.year = date->year;
+	previous_day.month = date->month;
+	previous_day.day = date->day;
+	AddCalendarDaysToDate(&previous_day, -1);
+	return CalendarDays(&previous_day, date, calendar) < 1;
+}
+
+enum class CoverageType {
+	MM, BB
+};
+
+inline float CoverageAct365Float(Date *start_date, Date *end_date) {
 	return ((float)DistanceInDays(start_date, end_date)) / 365.0f;
 }
 
-inline float CoverageAct360(Date *start_date, Date *end_date) {
+inline double CoverageAct365Double(Date *start_date, Date *end_date) {
+	return ((double)DistanceInDays(start_date, end_date)) / 365.0;
+}
+
+inline float CoverageAct360Float(Date *start_date, Date *end_date) {
 	return ((float)DistanceInDays(start_date, end_date)) / 360.0f;
 }
 
-inline float Coverage30360(Date *start_date, Date *end_date) {
+inline double CoverageAct360Double(Date *start_date, Date *end_date) {
+	return ((double)DistanceInDays(start_date, end_date)) / 360;
+}
+
+inline float Coverage30360Float(Date *start_date, Date *end_date) {
 	int number_of_years = end_date->year - start_date->year;
 	int number_of_months = end_date->month - start_date->month;
 	// we just assume that the day will line up if we are using coverages where months are all 30 days 
 	return (float)number_of_years + (float)number_of_months * 30.0f / 360.0f;
 }
 
-inline float Coverage30365(Date *start_date, Date *end_date) {
+inline double Coverage30360Double(Date *start_date, Date *end_date) {
+	int number_of_years = end_date->year - start_date->year;
+	int number_of_months = end_date->month - start_date->month;
+	// we just assume that the day will line up if we are using coverages where months are all 30 days 
+	return (double)number_of_years + (double)number_of_months * 30.0f / 360.0f;
+}
+
+inline float Coverage30365Float(Date *start_date, Date *end_date) {
 	int number_of_years = end_date->year - start_date->year;
 	int number_of_months = end_date->month - start_date->month;
 	// we just assume that the day will line up if we are using coverages where months are all 30 days 
 	return (float)number_of_years + (float)number_of_months * 30.0f / 365.0f;
+}
+
+inline double Coverage30365Double(Date *start_date, Date *end_date) {
+	int number_of_years = end_date->year - start_date->year;
+	int number_of_months = end_date->month - start_date->month;
+	// we just assume that the day will line up if we are using coverages where months are all 30 days 
+	return (double)number_of_years + (double)number_of_months * 30.0f / 365.0f;
+}
+
+int GetFirstWeekday(Date *start_date, DayOfTheWeek target_weekday) {
+	start_date->day = 1;
+	start_date->day += (target_weekday - GetDayOfTheWeek(start_date)) % 7;
+	return 0;
+}
+
+enum class FutureUnderlying {
+	SR3
+};
+
+struct Future {
+	MonthCode settlement_code;
+	int settlement_year;
+	Date settlement_date;
+	FutureUnderlying underlying;
+
+};
+
+int FutureInitialize(Future *result, MonthCode settlement_month, int settlement_year) {
+	result->underlying = FutureUnderlying::SR3;
+	result->settlement_code = settlement_month;
+	result->settlement_year = settlement_year;
+
+	result->settlement_date.year = settlement_year;
+	result->settlement_date.month = settlement_month;
+	GetFirstWeekday(&result->settlement_date, WEDNESDAY);
+	result->settlement_date.day += 14;
+	return 0;
+}
+
+float CalendarTimeInYears(Date *start_date, Date *end_date, Calendar calendar) {
+	return CalendarDays(start_date, end_date, calendar) / 365;
 }
