@@ -71,12 +71,14 @@ enum class YieldCurveType {
 struct YieldCurveHeader {
 	YieldCurveType curve_type;
 	Precision precision;
+	CoverageType coverage_type;
 };
 
 
 struct YieldCurveShortRateFloat {
 	YieldCurveHeader header;
 	float *interpolation_times = nullptr;
+	Date *interpolation_dates = nullptr;
 	float *short_rates = nullptr;
 	uint number_of_points;
 };
@@ -84,6 +86,7 @@ struct YieldCurveShortRateFloat {
 struct YieldCurveShortRateDouble {
 	YieldCurveHeader header;
 	double *interpolation_times = nullptr;
+	Date *interpolation_dates = nullptr;
 	double *short_rates = nullptr;
 	uint number_of_points;
 };
@@ -92,6 +95,7 @@ struct YieldCurveOvernightForwardFloat {
 	YieldCurveHeader header;
 	float *interpolation_times = nullptr;
 	float *overnight_forwards = nullptr;
+	Date *interpolation_dates = nullptr;
 	uint number_of_points;
 };
 
@@ -99,6 +103,7 @@ struct YieldCurveOvernightForwardDouble {
 	YieldCurveHeader header;
 	double *interpolation_times = nullptr;
 	double *overnight_forwards = nullptr;
+	Date *interpolation_dates = nullptr;
 	uint number_of_points;
 };
 
@@ -106,22 +111,26 @@ void YieldCurveInit(
 	void *yield_curve, 
 	YieldCurveType curve_type, 
 	Precision precision, 
+	CoverageType coverage_type,
 	uint number_of_interpolation_points,
 	Arena *arena) {
 	YieldCurveHeader *header = (YieldCurveHeader *)yield_curve;
 	header->curve_type = curve_type;
 	header->precision = precision;
+	header->coverage_type = coverage_type;
 	if (curve_type == YieldCurveType::OVERNIGHT_FORWARD) {
 		if (precision == Precision::FLOAT) {
 			YieldCurveOvernightForwardFloat *yield_curve_f = (YieldCurveOvernightForwardFloat *)yield_curve;
 			yield_curve_f->interpolation_times = (float *)ArenaGetMemory(number_of_interpolation_points * sizeof(float), arena);
 			yield_curve_f->overnight_forwards = (float *)ArenaGetMemory(number_of_interpolation_points * sizeof(float), arena);
+			yield_curve_f->interpolation_dates = (Date *)ArenaGetMemory(number_of_interpolation_points * sizeof(Date), arena);
 			yield_curve_f->number_of_points = number_of_interpolation_points;
 		}
 		else if (precision == Precision::DOUBLE) {
 			YieldCurveOvernightForwardDouble *yield_curve_d = (YieldCurveOvernightForwardDouble *)yield_curve;
 			yield_curve_d->interpolation_times = (double *)ArenaGetMemory(number_of_interpolation_points * sizeof(double), arena);
 			yield_curve_d->overnight_forwards = (double *)ArenaGetMemory(number_of_interpolation_points * sizeof(double), arena);
+			yield_curve_d->interpolation_dates = (Date *)ArenaGetMemory(number_of_interpolation_points * sizeof(Date), arena);
 			yield_curve_d->number_of_points = number_of_interpolation_points;
 		}
 	}
@@ -130,12 +139,14 @@ void YieldCurveInit(
 			YieldCurveShortRateFloat *yield_curve_f = (YieldCurveShortRateFloat *)yield_curve;
 			yield_curve_f->interpolation_times = (float *)ArenaGetMemory(number_of_interpolation_points * sizeof(float), arena);
 			yield_curve_f->short_rates = (float *)ArenaGetMemory(number_of_interpolation_points * sizeof(float), arena);
+			yield_curve_f->interpolation_dates = (Date *)ArenaGetMemory(number_of_interpolation_points * sizeof(Date), arena);
 			yield_curve_f->number_of_points = number_of_interpolation_points;
 		}
 		else if (precision == Precision::DOUBLE) {
 			YieldCurveShortRateDouble *yield_curve_d = (YieldCurveShortRateDouble *)yield_curve;
 			yield_curve_d->interpolation_times = (double *)ArenaGetMemory(number_of_interpolation_points * sizeof(double), arena);
 			yield_curve_d->short_rates = (double *)ArenaGetMemory(number_of_interpolation_points * sizeof(double), arena);
+			yield_curve_d->interpolation_dates = (Date *)ArenaGetMemory(number_of_interpolation_points * sizeof(Date), arena);
 			yield_curve_d->number_of_points = number_of_interpolation_points;
 		}
 	}
@@ -227,6 +238,126 @@ int YieldCurveGetShortRate(void *output_float_or_double, void *yield_curve_input
 	return 0;
 }
 
+int YieldCurveGetShortRate(void *output_float_or_double, void *yield_curve_input, Date *maturity_date) {
+	YieldCurveHeader *header = (YieldCurveHeader *)yield_curve_input;
+	switch (header->precision) {
+	case Precision::FLOAT: {
+		float *output = (float *)output_float_or_double;
+		switch (header->curve_type) {
+		case YieldCurveType::SHORT_RATE: {
+			YieldCurveShortRateFloat *yield_curve = (YieldCurveShortRateFloat *)yield_curve_input;
+			float *this_maturity_time = yield_curve->interpolation_times;
+			float *this_short_rate = yield_curve->short_rates;
+			Date *this_interpolation_date = yield_curve->interpolation_dates;
+			for (uint i = 0; i < yield_curve->number_of_points; ++i) {
+				if (*this_interpolation_date++ < *maturity_date) {
+					++this_short_rate;
+				}
+				else {
+					*output = *this_short_rate;
+					return 0;
+				}
+			}
+		} break;
+		case YieldCurveType::OVERNIGHT_FORWARD: {
+			YieldCurveOvernightForwardFloat *yield_curve = (YieldCurveOvernightForwardFloat *)yield_curve_input;
+			float *this_maturity_time = yield_curve->interpolation_times;
+			float *this_overnight_forward = yield_curve->overnight_forwards;
+			Date *this_interpolation_date = yield_curve->interpolation_dates;
+			for (uint i = 0; i < yield_curve->number_of_points; ++i) {
+				if (*this_interpolation_date++ < *maturity_date) {
+					++this_overnight_forward;
+				}
+				else {
+					Date next_business_day;
+					next_business_day.year = maturity_date->year;
+					next_business_day.month = maturity_date->month;
+					next_business_day.day = maturity_date->day;
+					IncrementDay(&next_business_day);
+					while (!IsWeekday(GetDayOfTheWeek(&next_business_day))) {
+						IncrementDay(&next_business_day);
+					}
+					float overnight_coverage;
+					switch (header->coverage_type) {
+						case CoverageType::MM: {
+							overnight_coverage = CoverageAct360Float(maturity_date, &next_business_day);
+						};
+						case CoverageType::BB: {
+							overnight_coverage = Coverage30360Float(maturity_date, &next_business_day);
+						}
+					}
+					*output = logf(1 + overnight_coverage * (*this_overnight_forward)) / overnight_coverage;
+					return 0;
+				}
+			}
+		} break;
+		default: {
+			return -1;
+		}
+		}
+	} break;
+	case Precision::DOUBLE: {
+		double *output = (double *)output_float_or_double;
+		switch (header->curve_type) {
+		case YieldCurveType::SHORT_RATE: {
+			YieldCurveShortRateDouble *yield_curve = (YieldCurveShortRateDouble *)yield_curve_input;
+			double *this_short_rate = yield_curve->short_rates;
+			Date *this_interpolation_date = yield_curve->interpolation_dates;
+			for (uint i = 0; i < yield_curve->number_of_points; ++i) {
+				if (*this_interpolation_date++ < *maturity_date) {
+					++this_short_rate;
+				}
+				else {
+					*output = *this_short_rate;
+					return 0;
+				}
+			}
+		} break;
+		case YieldCurveType::OVERNIGHT_FORWARD: {
+			YieldCurveOvernightForwardDouble *yield_curve = (YieldCurveOvernightForwardDouble *)yield_curve_input;
+			double *this_overnight_forward = yield_curve->overnight_forwards;
+			Date *this_interpolation_date = yield_curve->interpolation_dates;
+			for (uint i = 0; i < yield_curve->number_of_points; ++i) {
+				if (*this_interpolation_date++ < *maturity_date) {
+					++this_overnight_forward;
+				}
+				else {
+					Date next_business_day;
+					next_business_day.year = maturity_date->year;
+					next_business_day.month = maturity_date->month;
+					next_business_day.day = maturity_date->day;
+					IncrementDay(&next_business_day);
+					while (!IsWeekday(GetDayOfTheWeek(&next_business_day))) {
+						IncrementDay(&next_business_day);
+					}
+					double overnight_coverage;
+					switch (header->coverage_type) {
+						case CoverageType::MM: {
+							overnight_coverage = CoverageAct360Double(maturity_date, &next_business_day);
+						};
+						case CoverageType::BB: {
+							overnight_coverage = Coverage30360Double(maturity_date, &next_business_day);
+						}
+					}
+					// todo(AION) there should be coverage here, but for now all days are the same
+					*output = log(1 + overnight_coverage *(*this_overnight_forward)) / overnight_coverage;
+					return 0;
+				}
+			}
+		} break;
+		default: {
+			return -1;
+		}
+		}
+	} break;
+	default: {
+		return -1;
+	}
+	}
+	return 0;
+}
+
+//todo(AION) implement the version of this function that takes a maturity Date as input instead to demo the weekend effect
 int YieldCurveGetOvernightForward(void *output_float_or_double, void *yield_curve_input, void *maturity_in_years_float_or_double) {
 	YieldCurveHeader *header = (YieldCurveHeader *)yield_curve_input;
 	switch (header->precision) {
