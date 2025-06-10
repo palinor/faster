@@ -1,9 +1,11 @@
 #include <cstdlib>
 
+typedef unsigned int uint;
+
 struct Arena {
-    void **memory_blocks;
+    void** memory_blocks;
     uint number_of_blocks;
-    uint block_size; 
+    uint block_size;
     uint current_block_idx;
     uint current_byte_idx;
 };

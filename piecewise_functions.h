@@ -12,7 +12,7 @@
 #include <cmath>
 
 #ifndef uint
-#define uint unsigned int
+typedef unsigned int uint;
 #endif
 
 #include "arena_allocator.h"

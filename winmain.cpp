@@ -3,6 +3,7 @@
 #include <dxgi1_4.h>
 #include <tchar.h>
 
+#define IMGUI_DEFINE_MATH_OPERATORS
 #include "imgui_impl_win32.cpp"
 #include "imgui_impl_dx12.cpp"
 #include "imgui_interface.cpp"
@@ -97,7 +98,7 @@ int main(int, char *) {
 		global_pd3d_srv_descriptor_heap->GetGPUDescriptorHandleForHeapStart()
 	);
 
-	ImFont *font = input_output.Fonts->AddFontFromFileTTF("C:/Users/aionf/Github/gui-demos/imgui/misc/fonts/DroidSans.ttf", 16.0f);
+	ImFont *font = input_output.Fonts->AddFontFromFileTTF("C:/Users/aionf/Github/handmade-analytics/imgui/misc/fonts/DroidSans.ttf", 16.0f);
 	IM_ASSERT(font != nullptr);
 
 	ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
@@ -105,15 +106,33 @@ int main(int, char *) {
 	bool done = false;
 
 
-	size_t number_of_fras = 8;
-	size_t number_of_swaps = 5;
-	size_t number_of_plot_points = 200;
-	size_t number_of_cms = 5;
+	uint number_of_fras = 8;
+	uint number_of_swaps = 5;
+	uint number_of_plot_points = 200;
+	uint number_of_cms = 5;
 	float cms_maturity = 10;
-	size_t number_of_strikes = 200;
-	float floater_width = 200;
+	uint number_of_strikes = 200;
+	float slider_width = 200;
+    uint number_of_expiries = 10;
+    uint number_of_underlyings = 12;
+    float times_to_expiry[] = {0.25, 0.5, 0.75, 1, 2, 5, 10, 15, 20, 30};
+    float underlying_lengths[] = {0.25, 0.5, 0.75, 1, 2, 5, 10, 15, 20, 25, 30, 40};
 	DisplayData data;
-	displayDataInit(&data, number_of_fras, number_of_swaps, number_of_plot_points, number_of_cms, number_of_strikes, cms_maturity, floater_width);
+	displayDataInit(
+        &data,
+        number_of_fras,
+        number_of_swaps,
+        number_of_plot_points,
+        number_of_cms,
+        number_of_strikes,
+        number_of_expiries,
+        number_of_underlyings,
+        times_to_expiry,
+        underlying_lengths,
+        cms_maturity,
+        slider_width,
+        nullptr 
+    );
 
 
 	while (!done) {
@@ -183,7 +202,7 @@ int main(int, char *) {
 		global_fence_last_signaled_value = fence_value;
 		frame_context->fence_value = fence_value;
 	}
-	displayDataFree(&data);
+	//displayDataFree(&data);
 
 	WaitForLastSubmittedFrame();
 

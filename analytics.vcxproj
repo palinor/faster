@@ -123,7 +123,7 @@
       <WarningLevel>Level4</WarningLevel>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <OpenMPSupport>true</OpenMPSupport>
-      <AdditionalIncludeDirectories>C:\Users\aionf\Github\gui-demos\imgui;C:\Users\aionf\Github\gui-demos\imgui\backends;C:\Users\aionf\Github\gui-demos\implot;C:\Users\aionf\Github\curl-8.5.0_3-win64-mingw\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\aionf\Github\gui-demos\imgui;C:\Users\aionf\Github\gui-demos\imgui\backends;C:\Users\aionf\Github\gui-demos\implot;C:\Users\aionf\Github\curl-8.5.0_3-win64-mingw\include;C:\Users\aionf\Github\handmade-analytics\imgui;C:\Users\aionf\Github\handmade-analytics\implot;C:\Users\aionf\Github\handmade-analytics;C:\Users\aionf\Github\handmade-analytics\imgui\backends</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PreprocessorDefinitions>CURL_STATICLIB</PreprocessorDefinitions>
       <FunctionLevelLinking>true</FunctionLevelLinking>
@@ -161,7 +161,7 @@
     <ClCompile Include="imgui_interface.cpp" />
     <ClCompile Include="matrix.cpp" />
     <ClCompile Include="parse_dtcc.cpp" />
-    <ClCompile Include="solvers.cpp" />
+    <ClCompile Include="pde_solvers.cpp" />
     <ClCompile Include="threadpool.cpp" />
     <ClCompile Include="winmain.cpp">
       <CustomUnityFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</CustomUnityFile>
@@ -173,7 +173,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="platform_build.h" />
-    <ClInclude Include="threadpool.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

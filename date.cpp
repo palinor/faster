@@ -6,11 +6,11 @@ const uchar days_in_month[12] = {
 };
 
 enum Month {
-	BLANK, JANUARY, FEBRUARY, MARCH, APRIL, MAY, JUNE, JULY, AUGUST, SEPTEMBER, OCTOBER, NOVEMBER, DECEMBER
+	MONTH_BLANK, JANUARY, FEBRUARY, MARCH, APRIL, MAY, JUNE, JULY, AUGUST, SEPTEMBER, OCTOBER, NOVEMBER, DECEMBER
 };
 
-enum MonthCode {
-	BLANK, F, G, H, J, K, M, N, Q, U, V, X, Z
+enum class MonthCode {
+	MONTHCODE_BLANK, F, G, H, J, K, M, N, Q, U, V, X, Z
 };
 
 
@@ -25,7 +25,7 @@ bool IsLeapYear(uint year) {
 }
 
 uchar DaysInMonth(uchar month, uint year) {
-	if (month == FEBRUARY) {
+	if (month == Month::FEBRUARY) {
 		return IsLeapYear(year) ? 29 : 28;
 	} else {
 		return days_in_month[month];
@@ -96,7 +96,7 @@ void IncrementDay(Date *date) {
 	if (date->day == DaysInMonth(date->month, date->year)) {
 		if (date->month == 12) {
 			++date->year;
-			date->month = JANUARY;
+			date->month = Month::JANUARY;
 			date->day = 1;
 			return;
 		} else {
@@ -111,9 +111,9 @@ void IncrementDay(Date *date) {
 }
 
 void IncrementMonth(Date *date) {
-	if (date->month == DECEMBER) {
+	if (date->month == Month::DECEMBER) {
 		++date->year;
-		date->month = JANUARY;
+		date->month = Month::JANUARY;
 	} else {
 		++date->month;
 	}
@@ -130,7 +130,7 @@ void IncrementWeek(Date *date) {
 void AddCalendarDaysToDate(Date *date, int days) {
 	int days_left_to_add = days;
 	while (days_left_to_add > 366) {
-		bool will_cross_leap_year = date->month > FEBRUARY ? IsLeapYear(date->year + 1) : IsLeapYear(date->year);
+		bool will_cross_leap_year = date->month > Month::FEBRUARY ? IsLeapYear(date->year + 1) : IsLeapYear(date->year);
 		++date->year;
 		days_left_to_add -= will_cross_leap_year ? 366 : 365;
 	}
@@ -179,7 +179,7 @@ int DistanceInWeekdays(Date *start_date, Date *end_date) {
 	if (*start_date > *end_date) {
 		return -1 * DistanceInWeekdays(end_date, start_date);
 	}
-	Date known_monday = {6, MAY, 2024};
+	Date known_monday = {6, Month::MAY, 2024};
 	int weekday = DistanceInDays(&known_monday, start_date) % 7;
 	int total_distance = DistanceInDays(start_date, end_date);
 	if (weekday < 0) {
@@ -199,7 +199,7 @@ int DistanceInWeekdays(Date *start_date, Date *end_date) {
 }
 
 DayOfTheWeek GetDayOfTheWeek(Date *date) {
-	Date known_monday = {6, MAY, 2024};
+	Date known_monday = {6, static_cast<uchar>(Month::MAY), 2024};
 	return (DayOfTheWeek)(DistanceInDays(&known_monday, date) % 7);
 }
 
@@ -215,12 +215,12 @@ inline int NewYearsCount(Date *start_date, Date *end_date) {
 	moving_date.month = start_date->month;
 	moving_date.day = start_date->day;
 	int result = 0;
-	Date known_monday = {6, MAY, 2024};
+	Date known_monday = {6, Month::MAY, 2024};
 	Date next_new_years;
 	while (moving_date < *end_date) {
 		uint next_year_to_check = ((moving_date.month == 1) && (moving_date.day < 3)) ? moving_date.year : moving_date.year + 1;
 		next_new_years.year = next_year_to_check;
-		next_new_years.month = JANUARY;
+		next_new_years.month = Month::JANUARY;
 		next_new_years.day = 1;
 		DayOfTheWeek next_new_years_day_of_the_week = (DayOfTheWeek)(DistanceInDays(&known_monday, &next_new_years) % 7);
 		if (next_new_years_day_of_the_week != SATURDAY) {
@@ -240,7 +240,7 @@ inline int MlkDayCount(Date *start_date, Date *end_date) {
 	if (*end_date < *start_date) {
 		return 0;
 	}
-	if ((start_date->year == end_date->year) && (start_date->month > JANUARY)) {
+	if ((start_date->year == end_date->year) && (start_date->month > static_cast<uchar>(Month::JANUARY))) {
 		return 0;
 	}
 	Date moving_date;
@@ -248,11 +248,11 @@ inline int MlkDayCount(Date *start_date, Date *end_date) {
 	moving_date.month = start_date->month;
 	moving_date.day = start_date->day;
 	int result = 0;
-	Date known_monday = {6, MAY, 2024};
+	Date known_monday = {6, static_cast<uchar>(Month::MAY), 2024};
 	Date mlk_day;
 	while (moving_date < *end_date) {
 		mlk_day.year = moving_date.year;
-		mlk_day.month = JANUARY;
+		mlk_day.month = static_cast<uchar>(Month::JANUARY);
 		mlk_day.day = 1;
 		int day_of_the_week = DistanceInDays(&known_monday, &mlk_day) % 7;
 		mlk_day.day = (7 - day_of_the_week) % 7 + 15;
@@ -276,11 +276,11 @@ inline int PresidentsDayCount(Date *start_date, Date *end_date) {
 	moving_date.month = start_date->month;
 	moving_date.day = start_date->day;
 	int result = 0;
-	Date known_monday = {6, MAY, 2024};
+	Date known_monday = {6, static_cast<uchar>(Month::MAY), 2024};
 	Date presidents_day;
 	while (moving_date < *end_date) {
 		presidents_day.year = moving_date.year;
-		presidents_day.month = FEBRUARY;
+		presidents_day.month = static_cast<uchar>(Month::FEBRUARY);
 		presidents_day.day = 1;
 		int day_of_the_week = DistanceInDays(&known_monday, &presidents_day) % 7;
 		presidents_day.day = (7 - day_of_the_week) % 7 + 15;
@@ -304,15 +304,15 @@ inline int MemorialDayCount(Date *start_date, Date *end_date) {
 	moving_date.month = start_date->month;
 	moving_date.day = start_date->day;
 	int result = 0;
-	Date known_monday = {6, MAY, 2024};
+	Date known_monday = {6, static_cast<uchar>(Month::MAY), 2024};
 	Date memorial_day;
 	while (moving_date < *end_date) {
 		memorial_day.year = moving_date.year;
-		memorial_day.month = MAY;
+		memorial_day.month = static_cast<uchar>(Month::MAY);
 		memorial_day.day = 1;
 		int day_of_the_week = DistanceInDays(&known_monday, &memorial_day) % 7;
 		memorial_day.day = (7 - day_of_the_week) % 7 + 1;
-		while (memorial_day.day + 7 < DaysInMonth(MAY, memorial_day.year)) {
+		while (memorial_day.day + 7 < DaysInMonth(Month::MAY, memorial_day.year)) {
 			memorial_day.day += 7;
 		}
 		if ((moving_date <= memorial_day) && (memorial_day <= *end_date)) {
@@ -653,7 +653,7 @@ int FutureInitialize(Future *result, MonthCode settlement_month, int settlement_
 	result->settlement_year = settlement_year;
 
 	result->settlement_date.year = settlement_year;
-	result->settlement_date.month = settlement_month;
+	result->settlement_date.month = static_cast<uchar>(settlement_month);
 	GetFirstWeekday(&result->settlement_date, WEDNESDAY);
 	result->settlement_date.day += 14;
 	return 0;

@@ -36,14 +36,11 @@
     <ClCompile Include="options.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="solvers.cpp">
+    <ClCompile Include="pde_solvers.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="threadpool.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="platform_build.h">
       <Filter>Header Files</Filter>
     </ClInclude>

@@ -15,6 +15,7 @@
 #include "implot/implot.cpp"
 #include "yield_curve.cpp"
 #include "options.cpp"
+#include "pde_solvers.cpp"
 #endif
 
 
@@ -158,6 +159,7 @@ void displayDataInit(
 		data->yield_curve,
 		YieldCurveType::SHORT_RATE,
 		Precision::FLOAT,
+		CoverageType::MM,
 		number_of_stripping_instruments,
 		arena
 	);
