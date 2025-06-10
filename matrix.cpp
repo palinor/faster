@@ -14,10 +14,20 @@
 #define MAX_FLOAT 1e20
 #define MIN_FLOAT 1e-12
 
+struct Vectorf32 {
+	size_t size = 0;
+	float *contents = nullptr;
+};
+
+struct Vectorf64 {
+	size_t size = 0;
+	double *contents = nullptr;
+};
+
 struct Matrixf32
 {
-	size_t rows;
-	size_t cols;
+	size_t rows = 0;
+	size_t cols = 0;
 	float *contents = nullptr;
 	size_t ld;
 	float *operator[](int i) { return contents + i * ld; }
@@ -25,12 +35,96 @@ struct Matrixf32
 
 struct Matrixf64
 {
-	size_t rows;
-	size_t cols;
+	size_t rows = 0;
+	size_t cols = 0;
 	double *contents = nullptr;
 	size_t ld;
 	double *operator[](int i) { return contents + i * ld; }
 };
+
+struct MatrixTridiagonalf32 {
+	size_t dimension = 0;
+	float *upper_diagonal = nullptr;
+	float *diagonal = nullptr;
+	float *lower_diagonal = nullptr;
+};
+
+void MatrixTridiagonalf32MultiplyConstant(MatrixTridiagonalf32 *matrix, const float c) {
+	matrix->upper_diagonal[0] *= c;
+	matrix->diagonal[0] *= c;
+	matrix->lower_diagonal[matrix->dimension - 1] *= c;
+	matrix->diagonal[matrix->dimension - 1] *= c;
+	for (size_t i = 1; i < matrix->dimension - 1; ++i) {
+		matrix->upper_diagonal[i] *= c;
+		matrix->diagonal[i] *= c;
+		matrix->lower_diagonal[i] *= c;
+	}
+}
+
+void MatrixTridiagonalAdd(MatrixTridiagonalf32 *output, MatrixTridiagonalf32 *a, MatrixTridiagonalf32 *b) {
+	for (size_t i = 0; i < output->dimension; ++i) {
+		output->upper_diagonal[i] = a->upper_diagonal[i] + b->upper_diagonal[i];
+		output->diagonal[i] = a->diagonal[i] + b->diagonal[i];
+		output->lower_diagonal[i] = a->lower_diagonal[i] + b->lower_diagonal[i];
+	}
+}
+
+
+int MatrixTridiagonalf23ApplyToVector(Vectorf32 *output, MatrixTridiagonalf32 *matrix, Vectorf32 *vector) {
+	if (matrix->dimension != vector->size) {
+		return 1;
+	}
+	if (matrix->dimension != output->size) {
+		return 2;
+	}
+	if (matrix->dimension < 3) {
+		return 3;
+	}
+	if (output->contents == vector->contents) {
+		return 4;
+	}
+	const size_t n = matrix->dimension;
+	output->contents[0] = matrix->upper_diagonal[0] * vector->contents[1] + matrix->diagonal[0] * vector->contents[0];
+	output->contents[n - 1] = matrix->lower_diagonal[n - 1] * vector->contents[n - 2] + matrix->diagonal[n - 1] * vector->contents[n - 1];
+	for (size_t i = 1; i < n - 1; ++i) {
+		output->contents[i] = matrix->upper_diagonal[i] * vector->contents[i + 1]
+			+ matrix->diagonal[i] * vector->contents[i]
+			+ matrix->lower_diagonal[i] * vector->contents[i - 1];
+	}
+	return 0;
+}
+
+int MatrixTridiagonalf32InvertEquation(Vectorf32 *output, MatrixTridiagonalf32 *matrix, Vectorf32 *vector, Vectorf32 *scratch) {
+	if (matrix->dimension != vector->size) {
+		return 1;
+	}
+	if (matrix->dimension != output->size) {
+		return 2;
+	}
+	if (matrix->dimension < 3) {
+		return 3;
+	}
+	if (output->contents = vector->contents) {
+		return 4;
+	}
+
+	const size_t n = matrix->dimension;
+
+	scratch->contents[0] = matrix->upper_diagonal[0] / matrix->diagonal[0];
+	vector->contents[0] = vector->contents[0] / matrix->diagonal[0];
+	for (size_t i = 1; i < matrix->dimension; ++i) {
+		scratch->contents[i] = matrix->upper_diagonal[i] / (matrix->diagonal[i] - matrix->lower_diagonal[i] * scratch->contents[i - 1]);
+		vector->contents[i] -= matrix->lower_diagonal[i] * vector->contents[i - 1];
+		vector->contents[i] /= matrix->diagonal[i] - matrix->lower_diagonal[i] * scratch->contents[i - 1];
+	}
+
+	output->contents[n - 1] = vector->contents[n - 1];
+	for (int i = n - 2; i > 0; --i) {
+		output->contents[i] = vector->contents[i] - scratch->contents[i] * output->contents[i + 1];
+	}
+	return 0;
+}
+
 
 inline void matrixf32Free(Matrixf32 *a) {
 	free(a->contents);
