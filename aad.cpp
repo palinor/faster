@@ -2,7 +2,6 @@
 #include <cassert>
 #include <cmath>
 
-const size_t TAPE_SIZE = 1024;
 
 struct TapeNodeFloat {
 	float weights[2];
@@ -52,6 +51,7 @@ int AadFloatInit(AadFloat *result, float x, TapeFloat *tape) {
 	assert(tape->current_node_index + 1 < tape->number_of_nodes);
 	result->index_on_tape = tape->current_node_index;
 	result->value = x;
+	result->tape = tape;
 	TapeNodeFloat *new_node = tape->nodes + tape->current_node_index;
 	++tape->current_node_index;
 	new_node->weights[0] = 0;
@@ -247,7 +247,7 @@ AadFloat sqrt(AadFloat x) {
 	return result;
 }
 
-float gradient_with_respect_to(TapeGradientFloat *grad, AadFloat x) {
+float GradientWithRespectTo(TapeGradientFloat *grad, AadFloat x) {
 	return grad->derivatives[x.index_on_tape];
 }
 
@@ -273,16 +273,20 @@ int PopulateTapeGradient(TapeGradientFloat *result, AadFloat *final_value) {
 void AadTests() {
 	TapeFloat t;
 	const size_t maxTapeSize = 256;
-	t.nodes = reinterpret_cast<float.tapenode *>(malloc(maxTapeSize * sizeof(float.tapenode)));
-	t.nodes.index = 0;
+	t.nodes = reinterpret_cast<TapeNodeFloat *>(malloc(maxTapeSize * sizeof(TapeNodeFloat)));
+	t.current_node_index = 0;
 	t.number_of_nodes = maxTapeSize;
-	AadFloat x = AddFloatToTape(9, &t);
-	AadFloat y = AddFloatToTape(0.5, &t);
-	AadFloat z1 = x * y;
-	AadFloat z2 = pow(x, y);
+	AadFloat x, y, z1, z2;
+	AadFloatInit(&x, 9, &t);
+	AadFloatInit(&y, 0.5, &t);
+	z1 = x * y;
+	z2 = pow(x, y);
 
-	float_grad grad1 = ComputeGradient(&z1);
-	float_grad grad2 = ComputeGradient(&z2);
+	TapeGradientFloat grad1, grad2;
+	PopulateTapeGradient(&grad1, &z1);
+	PopulateTapeGradient(&grad2, &z2);
+
+
 	float dz1dx = GradientWithRespectTo(&grad1, x);
 	float dz1dy = GradientWithRespectTo(&grad1, y);
 	float dz2dx = GradientWithRespectTo(&grad2, x);
@@ -307,7 +311,7 @@ struct AadFloat_shifted_sabr_params {
 };
 
 //todo(AION): there is a bug in here somewhere. Need to double check the formula:w
-AadFloat AadFloatShiftedSabr(AadFloat strike, AadFloat_shifted_sabr_params *params) {
+AadFloat AadFloatShiftedSabr(AadFloat &strike, AadFloat_shifted_sabr_params *params) {
 	AadFloat moneyness = params->forward_ - strike;
 	AadFloat shiftedForward = params->forward_ + params->zeta_;
 	AadFloat shiftedStrike = strike + params->zeta_;
@@ -342,7 +346,7 @@ AadFloat AadFloatShiftedSabr(AadFloat strike, AadFloat_shifted_sabr_params *para
 }
 
 void TestShiftedSabr() {
-	float_tape t;
+	TapeFloat t;
 	const size_t maxTapeSize = 1024;
 	float strikeStart = -2e-2;
 	float strikeEnd = 1e-1;
@@ -351,21 +355,22 @@ void TestShiftedSabr() {
 	std::ofstream myFile;
 	myFile.open("shifted_sabr_smile.csv");
 	for (size_t i = 0; i < nStrikes; i++) {
-		t.nodes_ = reinterpret_cast<float.tapenode *>(malloc(maxTapeSize * sizeof(float.tapenode)));
-		t.node.index = 0;
-		t.nNodes_ = maxTapeSize;
+		t.nodes = reinterpret_cast<TapeNodeFloat *>(malloc(maxTapeSize * sizeof(TapeNodeFloat)));
+		t.current_node_index = 0;
+		t.number_of_nodes = maxTapeSize;
 		AadFloat_shifted_sabr_params params;
-		params.forward_ = AddFloatToTape(2.5e-2, &t);
-		params.timeToExpiry_ = AddFloatToTape(10, &t);
-		params.alpha_ = AddFloatToTape(0.28, &t);
-		params.beta_ = AddFloatToTape(0.36, &t);
-		params.rho_ = AddFloatToTape(0.05, &t);
-		params.zeta_ = AddFloatToTape(0.03, &t);
-		params.sigma0_ = AddFloatToTape(0.019, &t);
-		AadFloat thisStrike = AddFloatToTape(strikeStart + i * strikeStep, &t);
-		AadFloat impliedVol = AadFloatShiftedSabr(thisStrike, &params);
+		AadFloatInit(&(params.forward_), 2.5e-2, &t);
+		AadFloatInit(&(params.timeToExpiry_), 10, &t);
+		AadFloatInit(&(params.alpha_), 0.28, &t);
+		AadFloatInit(&(params.beta_), 0.36, &t);
+		AadFloatInit(&(params.rho_), 0.05, &t);
+		AadFloatInit(&(params.zeta_), 0.03, &t);
+		AadFloatInit(&(params.sigma0_), 0.019, &t);
+		AadFloat thisStrike, impliedVol;
+		AadFloatInit(&thisStrike, strikeStart + i * strikeStep, &t);
+		impliedVol = AadFloatShiftedSabr(thisStrike, &params);
 		myFile << thisStrike.value << "," << impliedVol.value << "\n";
-		free(t.nodes_);
+		free(t.nodes);
 	}
 	myFile.close();
 }
