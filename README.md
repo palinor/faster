@@ -29,6 +29,9 @@ The GUI includes:
 
 The goal is to make sophisticated models interactively explorable.
 
+![Yield curves](media/yield_curves.gif)
+![Vanilla smiles](media/vanilla_smiles.gif)
+
 ---
 
 ## 📦 Build Instructions
