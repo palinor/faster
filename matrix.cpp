@@ -104,7 +104,7 @@ int MatrixTridiagonalf32InvertEquation(Vectorf32 *output, MatrixTridiagonalf32 *
 	if (matrix->dimension < 3) {
 		return 3;
 	}
-	if (output->contents = vector->contents) {
+	if (output->contents == vector->contents) {
 		return 4;
 	}
 
