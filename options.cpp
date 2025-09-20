@@ -479,6 +479,88 @@ float CmsReplicationForwardPremium(float forward, float *normal_vols, float *str
 }
 
 
+struct CharacteristicFunctionProjectionConstants {
+
+	float time_to_start;
+	float time_to_end;
+	float strike;
+	float discount_factor;
+	float forward;
+
+};
+
+enum class FunctionContextType {
+	NONE,
+	VANILLA_CALL_PRICING,
+	GET_VOL
+};
+
+struct FunctionContextHeader {
+	FunctionContextType context_type = FunctionContextType::NONE;
+
+};
+
+struct GetVolContext {
+	FunctionContextHeader context_header = { FunctionContextType::GET_VOL };
+};
+
+struct VanillaCallPricingFunctionContext {
+	FunctionContextHeader context_header = { FunctionContextType::VANILLA_CALL_PRICING };
+	CharacteristicFunctionProjectionConstants constants;
+	float (*get_vol)(float, float, float, void *);
+	GetVolContext get_vol_context;
+};
+
+
+// this is the theta(z) function we want to project on to the Chebyshev series
+float VanillaCallPricingFunction(
+	float x,
+	void *context
+) {
+	FunctionContextHeader *context_header = (FunctionContextHeader *)context;
+	if (context_header->context_type != FunctionContextType::VANILLA_CALL_PRICING) {
+		return -1;
+	}
+	VanillaCallPricingFunctionContext *pricing_context = (VanillaCallPricingFunctionContext *)(context);
+	CharacteristicFunctionProjectionConstants constants = pricing_context->constants;
+	float equivalent_strike = expf(-x) * constants.strike - 1;
+	equivalent_strike /= (constants.time_to_end - constants.time_to_start);
+	float time_to_expiry = constants.time_to_end;
+	float sigma = pricing_context->get_vol(equivalent_strike, constants.time_to_end, constants.forward, &(pricing_context->get_vol_context));
+	float result = OptionForwardPremiumNormalVol(sigma, constants.forward, equivalent_strike, constants.time_to_end, OptionType::CALL);
+	result /= constants.discount_factor;
+	return result;
+}
+
+
+void ProjectVanillaCallPricingFunction(
+	float *projection_coefficients,
+	CharacteristicFunctionProjectionConstants *constants,
+	float (*get_vol)(float, float, float, void *),
+	void *get_vol_context,
+	size_t chebyshev_degree,
+	size_t chebyshev_precision
+) {
+	PolynomialFloat *chebyshev_polynomials;
+	PolynomialFloat projected_result;
+	projected_result.coefficients = projection_coefficients;
+	projected_result.number_of_coefficients = chebyshev_degree + 1;
+	PolynomialFloat32ChebyshevMallocAllocate(chebyshev_polynomials, chebyshev_degree);
+	PolynomialFloat32CreateChebyshev(chebyshev_polynomials, chebyshev_degree);
+
+	float *chebyshev_coefficients = (float *)malloc(sizeof(float) * (chebyshev_degree + 1));
+	VanillaCallPricingFunctionContext pricing_context;
+	pricing_context.constants = *constants;
+	pricing_context.get_vol = get_vol;
+	pricing_context.get_vol_context = *(GetVolContext*)get_vol_context;
+	PolynomialFloat32ProjectChebyshev(chebyshev_coefficients, chebyshev_degree, VanillaCallPricingFunction, &pricing_context, chebyshev_precision);
+	PolynomialFloat32ChebyshevProjectionPolynomial(&projected_result, chebyshev_coefficients, chebyshev_polynomials, chebyshev_degree);
+
+}
+
+
+
+
 struct LGM1FTermStructureFloat {
 
 	uint number_of_points;

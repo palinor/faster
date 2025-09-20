@@ -13,6 +13,8 @@
 #include "arena_allocator.h"
 #include "piecewise_functions.h"
 
+#define PI 3.14159265359f
+
 
 
 /**
@@ -597,6 +599,116 @@ void PiecewiseFunctionFloatGetExponentialBackwardIntegral(PiecewiseFunctionFloat
         ++result_function;
     }
 }
+
+/*
+* Set up list of the first n Chebyshev polynomials
+*/
+void PolynomialFloat32ChebyshevArenaAllocate(PolynomialFloat *polynomial_list, size_t n, Arena *arena) {
+
+    if (!polynomial_list) {
+        return;
+    }
+
+    PolynomialFloat *this_polynomial = polynomial_list;
+    for (size_t i = 1; i < n + 2; ++i) {
+        this_polynomial->coefficients = (float *)ArenaGetMemory(i * sizeof(float), arena);
+        this_polynomial->number_of_coefficients = i;
+    }
+}
+
+void PolynomialFloat32ChebyshevMallocAllocate(PolynomialFloat *polynomial_list, size_t n) {
+    if (!polynomial_list) {
+        return;
+    }
+    PolynomialFloat *this_polynomial = polynomial_list;
+    for (size_t i = 1; i < n + 2; ++i) {
+        this_polynomial->coefficients = (float *)malloc(i * sizeof(float));
+        this_polynomial->number_of_coefficients = i;
+    }
+}
+
+void PolynomialFloat32CreateChebyshev(PolynomialFloat *polynomial_list, size_t n) {
+    if (!polynomial_list) {
+        return;
+    }
+    PolynomialFloat *this_polynomial = polynomial_list;
+    PolynomialFloat *last_polynomial;
+    PolynomialFloat *before_last_polynomial;
+    this_polynomial->coefficients[0] = 1;
+    if (n > 0) {
+        before_last_polynomial = this_polynomial++;
+        this_polynomial->coefficients[0] = 0;
+        this_polynomial->coefficients[1] = 1;
+    }
+
+    if (n > 1) {
+        last_polynomial = this_polynomial++;
+        PolynomialFloatAdd(this_polynomial, last_polynomial, before_last_polynomial++);
+    }
+}
+
+float ChebyshevApproximationCoefficient(
+    size_t chebyshev_degree, 
+    size_t polynomial_approximation_degree, 
+    float (*function_to_approximate)(float, void *),
+    void *function_to_approximate_context
+) {
+    float result = function_to_approximate(1, function_to_approximate_context) / 2.0f;
+    result += chebyshev_degree % 2 ? -function_to_approximate(-1, function_to_approximate_context) / 2.0f : function_to_approximate(1, function_to_approximate_context) / 2.0f;
+
+    float polynomial_approximation_degree_f = (float)polynomial_approximation_degree;
+    float chebyshev_degree_f = (float)chebyshev_degree;
+    for (size_t i = 1; i < polynomial_approximation_degree; ++i) {
+        float i_f = (float)i;
+        result += function_to_approximate(cosf(i_f * PI / polynomial_approximation_degree_f), function_to_approximate_context) * cosf(i * chebyshev_degree_f * PI / polynomial_approximation_degree_f);
+    }
+    result *= 2.0f / polynomial_approximation_degree_f;
+    return result;
+}
+
+
+void PolynomialFloat32ProjectChebyshev(
+    float *chebyshev_coefficients,
+    size_t n_chebyshev_polynomials,
+    float (*function_to_approximate)(float, void *),
+    void *function_to_approximate_context,
+    size_t polynomial_approximation_degree
+) {
+    float *this_coef = chebyshev_coefficients;
+    for (size_t i = 0; i < n_chebyshev_polynomials; ++i) {
+        *(this_coef++) = ChebyshevApproximationCoefficient(
+            i,
+            polynomial_approximation_degree,
+            function_to_approximate,
+            function_to_approximate_context
+        );
+    }
+}
+
+
+void PolynomialFloat32ChebyshevProjectionPolynomial(
+    PolynomialFloat *result,
+    float *chebyshev_coefficients,
+    PolynomialFloat *chebyshev_polynomials,
+    size_t chebyshev_degree 
+) {
+    if (result->coefficients) {
+        assert(result->number_of_coefficients > chebyshev_degree);
+    }
+    memset(result->coefficients, 0, result->number_of_coefficients);
+    float *this_coefficient = chebyshev_coefficients;
+    PolynomialFloat *this_chebyshev_polynomial = chebyshev_polynomials;
+    for (size_t i = 0; i < chebyshev_degree + 1; ++i) {
+        for (size_t k = 0; k < this_chebyshev_polynomial->number_of_coefficients; ++k) {
+            this_chebyshev_polynomial->coefficients[k] *= *this_coefficient;
+        }
+        ++this_coefficient;
+        PolynomialFloatAdd(result, this_chebyshev_polynomial, result);
+        ++this_chebyshev_polynomial;
+    }
+}
+
+
 
 void TestPolynomials() {
     PolynomialFloat polynomial;

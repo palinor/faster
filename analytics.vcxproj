@@ -23,6 +23,7 @@
     <ProjectGuid>{927BAB2A-643C-4251-A21C-E5938FF06FDB}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>AnalyticsGUI</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -78,10 +79,12 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);C:\Users\aionf\Github\curl\builds\libcurl-vc17-X64-release-static-ipv6-sspi-schannel\include</IncludePath>
     <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);C:\Users\aionf\Github\curl\builds\libcurl-vc17-X64-release-static-ipv6-sspi-schannel\lib</LibraryPath>
+    <CustomBuildAfterTargets>Build</CustomBuildAfterTargets>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);C:\Users\aionf\Github\curl\builds\libcurl-vc17-X64-release-static-ipv6-sspi-schannel\include</IncludePath>
     <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);C:\Users\aionf\Github\curl\builds\libcurl-vc17-X64-release-static-ipv6-sspi-schannel\lib</LibraryPath>
+    <CustomBuildAfterTargets>Build</CustomBuildAfterTargets>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -123,7 +126,7 @@
       <WarningLevel>Level4</WarningLevel>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <OpenMPSupport>true</OpenMPSupport>
-      <AdditionalIncludeDirectories>C:\Users\aionf\Github\gui-demos\imgui;C:\Users\aionf\Github\gui-demos\imgui\backends;C:\Users\aionf\Github\gui-demos\implot;C:\Users\aionf\Github\curl-8.5.0_3-win64-mingw\include;C:\Users\aionf\Github\handmade-analytics\imgui;C:\Users\aionf\Github\handmade-analytics\implot;C:\Users\aionf\Github\handmade-analytics;C:\Users\aionf\Github\handmade-analytics\imgui\backends</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\aionf\Github\gui-demos\imgui;C:\Users\aionf\Github\gui-demos\imgui\backends;C:\Users\aionf\Github\gui-demos\implot;C:\Users\aionf\Github\curl-8.5.0_3-win64-mingw\include;C:\Users\aionf\Github\handmade-analytics\imgui;C:\Users\aionf\Github\handmade-analytics\implot;C:\Users\aionf\Github\handmade-analytics;C:\Users\aionf\Github\handmade-analytics\imgui\backends;C:\Users\aionf\anaconda3\include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PreprocessorDefinitions>CURL_STATICLIB</PreprocessorDefinitions>
       <FunctionLevelLinking>true</FunctionLevelLinking>
@@ -135,13 +138,21 @@
     <Link>
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
       <SubSystem>Console</SubSystem>
+      <AdditionalLibraryDirectories>C:\Users\aionf\anaconda3\libs</AdditionalLibraryDirectories>
     </Link>
+    <CustomBuildStep>
+      <Command>cl /std:c++20 /Zi /LD /I C:/Users/aionf/anaconda3/include handmadelibmodule.cpp C:/Users/aionf/anaconda3/libs/python312.lib /link /DEBUG /OUT:handmadelib.pyd</Command>
+    </CustomBuildStep>
+    <CustomBuildStep>
+      <Message>Compiling Python Interface</Message>
+      <Outputs>$(OutDir)\handmadelib.pyd</Outputs>
+    </CustomBuildStep>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <OpenMPSupport>true</OpenMPSupport>
-      <AdditionalIncludeDirectories>C:\Users\aionf\Github\gui-demos\imgui;C:\Users\aionf\Github\gui-demos\imgui\backends;C:\Users\aionf\Github\gui-demos\implot;C:\Users\aionf\Github\curl-8.5.0_3-win64-mingw\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\aionf\Github\gui-demos\imgui;C:\Users\aionf\Github\gui-demos\imgui\backends;C:\Users\aionf\Github\gui-demos\implot;C:\Users\aionf\Github\curl-8.5.0_3-win64-mingw\include;;C:\Users\aionf\anaconda3\include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <PreprocessorDefinitions>CURL_STATICLIB</PreprocessorDefinitions>
@@ -154,9 +165,16 @@
     <Link>
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
       <SubSystem>Console</SubSystem>
+      <AdditionalLibraryDirectories>C:\Users\aionf\anaconda3\libs</AdditionalLibraryDirectories>
     </Link>
+    <CustomBuildStep>
+      <Outputs>$(OutDir)\handmadelib.pyd</Outputs>
+      <Message>Compiling Python Interface</Message>
+      <Command>cl /std:c++20 /03 /LD /I C:/Users/aionf/anaconda3/include handmadelibmodule.cpp C:/Users/aionf/anaconda3/libs/python312.lib /link /OUT:handmadelib.pyd</Command>
+    </CustomBuildStep>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="handmadelibmodule.cpp" />
     <ClCompile Include="options.cpp" />
     <ClCompile Include="imgui_interface.cpp" />
     <ClCompile Include="matrix.cpp" />
