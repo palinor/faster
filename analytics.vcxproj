@@ -141,7 +141,7 @@
       <AdditionalLibraryDirectories>C:\Users\aionf\anaconda3\libs</AdditionalLibraryDirectories>
     </Link>
     <CustomBuildStep>
-      <Command>cl /std:c++20 /Zi /LD /I C:/Users/aionf/anaconda3/include handmadelibmodule.cpp C:/Users/aionf/anaconda3/libs/python312.lib /link /DEBUG /OUT:handmadelib.pyd</Command>
+      <Command>cl /std:c++20 /Zi /LD /I C:/Users/aionf/anaconda3/include src/handmadelibmodule.cpp C:/Users/aionf/anaconda3/libs/python312.lib /link /DEBUG /OUT:handmadelib.pyd</Command>
     </CustomBuildStep>
     <CustomBuildStep>
       <Message>Compiling Python Interface</Message>
@@ -170,7 +170,7 @@
     <CustomBuildStep>
       <Outputs>$(OutDir)\handmadelib.pyd</Outputs>
       <Message>Compiling Python Interface</Message>
-      <Command>cl /std:c++20 /03 /LD /I C:/Users/aionf/anaconda3/include handmadelibmodule.cpp C:/Users/aionf/anaconda3/libs/python312.lib /link /OUT:handmadelib.pyd</Command>
+      <Command>cl /std:c++20 /03 /LD /I C:/Users/aionf/anaconda3/include src/handmadelibmodule.cpp C:/Users/aionf/anaconda3/libs/python312.lib /link /OUT:handmadelib.pyd</Command>
     </CustomBuildStep>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -180,13 +180,9 @@
     <ClCompile Include="matrix.cpp" />
     <ClCompile Include="parse_dtcc.cpp" />
     <ClCompile Include="pde_solvers.cpp" />
+    <ClCompile Include="src\handmadelibmodule.cpp" />
+    <ClCompile Include="src\winmain.cpp" />
     <ClCompile Include="threadpool.cpp" />
-    <ClCompile Include="winmain.cpp">
-      <CustomUnityFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</CustomUnityFile>
-      <CustomUnityFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</CustomUnityFile>
-      <IncludeInUnityFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</IncludeInUnityFile>
-      <IncludeInUnityFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</IncludeInUnityFile>
-    </ClCompile>
     <ClCompile Include="yield_curve.cpp" />
   </ItemGroup>
   <ItemGroup>

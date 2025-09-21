@@ -12,14 +12,8 @@ struct Arena {
 
 Arena *ArenaAllocate(uint block_size, uint starting_max_blocks) {
     Arena *result = (Arena *)malloc(sizeof(Arena));
-    if (!result) {
-        return nullptr;
-    }
     void **memory_blocks = (void **)malloc(starting_max_blocks * sizeof(void *));
     void *starting_block = malloc(block_size);
-    if (!starting_block) {
-        return nullptr;
-    }
     memory_blocks[0] = starting_block;
     result->memory_blocks = memory_blocks;
     result->number_of_blocks = starting_max_blocks;
@@ -39,9 +33,6 @@ Arena *ArenaAllocateDefault() {
 void ArenaGrow(Arena *arena) {
     if (arena->current_block_idx + 1 == arena->number_of_blocks) {
         arena->memory_blocks = (void **)realloc(arena->memory_blocks, 2 * arena->number_of_blocks * sizeof(void *));
-        if (!arena->memory_blocks) {
-            return;
-        }
     }
     arena->memory_blocks[++arena->current_block_idx] = malloc(arena->block_size * sizeof(void *));
     arena->current_byte_idx = 0;

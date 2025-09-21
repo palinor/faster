@@ -660,5 +660,5 @@ int FutureInitialize(Future *result, MonthCode settlement_month, int settlement_
 }
 
 float CalendarTimeInYears(Date *start_date, Date *end_date, Calendar calendar) {
-	return CalendarDays(start_date, end_date, calendar) / 365;
+	return (float)CalendarDays(start_date, end_date, calendar) / 365.0f;
 }

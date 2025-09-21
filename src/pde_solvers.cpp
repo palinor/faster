@@ -27,6 +27,8 @@ void FillTransitionMatrix(
 	float theta_delta_t_coef
 ) {
 
+	// todo(AION) this needs to handle the non-equidistant x spacing in the grid
+
 	// note that the matrix is implemented as (I + theta_delta_t_coef * A)
 	// 
 	// todo(AION) the boundary conditions go here

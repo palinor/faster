@@ -10,8 +10,8 @@
 #include <cstring>
 #include <cmath>
 
-#include "include/arena_allocator.h"
-#include "include/piecewise_functions.h"
+#include "arena_allocator.h"
+#include "piecewise_functions.h"
 
 #define PI 3.14159265359f
 

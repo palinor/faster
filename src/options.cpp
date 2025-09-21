@@ -11,7 +11,6 @@
 #include "piecewise_functions.h"
 #else
 #include "piecewise_functions.cpp"
-#include "complex.cpp"
 #endif
 
 enum class OptionType {
@@ -556,60 +555,8 @@ void ProjectVanillaCallPricingFunction(
 	pricing_context.get_vol_context = *(GetVolContext*)get_vol_context;
 	PolynomialFloat32ProjectChebyshev(chebyshev_coefficients, chebyshev_degree, VanillaCallPricingFunction, &pricing_context, chebyshev_precision);
 	PolynomialFloat32ChebyshevProjectionPolynomial(&projected_result, chebyshev_coefficients, chebyshev_polynomials, chebyshev_degree);
-	
+
 }
-
-struct ExponentialDistributionLambdaTSFloat32 {
-	float *lambdas;
-	float *times;
-	size_t number_of_lambdas;
-
-	float operator()(float t) {
-		float *this_lambda = lambdas;
-		float *this_time = times;
-		for (size_t i = 0; i < number_of_lambdas; ++i) {
-			if (*this_time < t) {
-				++this_time;
-				++this_lambda;
-			}
-		}
-		return *this_lambda;
-	}
-};
-
-
-c_float ExponentialCharacteristicFunction(float t, float x, ExponentialDistributionLambdaTSFloat32 lambda_ts) {
-	c_float one{ 1 };
-	float lambda = lambda_ts(t);
-	c_float denominator_right_term{ 0, x / lambda };
-	c_float denominator = one - denominator_right_term;
-	return one / denominator;
-}
-
-
-struct PoissonProcessIntensityTSFloat32 {
-	float *lambdas;
-	float *times;
-	size_t number_of_lambdas;
-
-	float operator()(float t) {
-		float *this_lambda = lambdas;
-		float *this_time = times;
-		for (size_t i = 0; i < number_of_lambdas; ++i) {
-			if (*this_time < t) {
-				++this_time;
-				++this_lambda;
-			}
-		}
-		return *this_lambda;
-	}
-};
-
-
-inline float CompoundPoissonJumpBFunction(float t, float T, float kappa) {
-	return 1 - expf(-kappa * (T - t)) / kappa;
-}
-
 
 
 
