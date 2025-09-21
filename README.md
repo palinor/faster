@@ -1,9 +1,13 @@
 # F.A.S.T.E.R.
+
+![Yield curves](media/yield_curves.gif)
 **Fast Analytics and Stripping Tool for Exotic Rates**
 
 F.A.S.T.E.R. is a high-performance C++ application for constructing yield curves, calibrating interest rate models, and analyzing vanilla and exotic interest rate derivatives — all in real time.
 
 Built for speed and precision, F.A.S.T.E.R. provides a GUI that lets users intuitively manipulate forwards, swaps, and options to generate and visualize term structures. The tool supports light exotic pricing, volatility smiles, and calibration of a one-factor short rate model.
+
+Did I mention it runs on my phone?
 
 ---
 
@@ -29,7 +33,7 @@ The GUI includes:
 
 The goal is to make sophisticated models interactively explorable.
 
-![Yield curves](media/yield_curves.gif)
+
 ![Vanilla smiles](media/vanilla_smiles.gif)
 
 ---
@@ -99,3 +103,4 @@ See `LICENSE` file.
 ## 🔬 Disclaimer
 
 F.A.S.T.E.R. is a personal research project and is not intended for production trading or financial advice. Use at your own risk.
+
