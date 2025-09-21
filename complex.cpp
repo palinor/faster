@@ -1,9 +1,15 @@
 #include "basic_math.h"
 
-typedef struct c_float {
+struct c_float {
 	float re;
 	float im;
-} c_float;
+
+	c_float operator+(c_float other);
+	c_float operator-(c_float other);
+	c_float operator*(c_float other);
+	c_float operator/(c_float other);
+
+};
 
 inline c_float CInject(float x) {
 	c_float res;
@@ -51,4 +57,20 @@ inline c_float CConj(c_float z) {
 inline c_float CDiv(c_float x, c_float y) {
 	c_float z = CDiv(CMul(x, CConj(y)), CInject(CModule2(y)));
 	return z;
+}
+
+c_float c_float::operator+(c_float other) {
+	return CAdd(*this, other);
+}
+
+c_float c_float::operator-(c_float other) {
+	return CSub(*this, other);
+}
+
+c_float c_float::operator*(c_float other) {
+	return CMul(*this, other);
+}
+
+c_float c_float::operator/(c_float other) {
+	return CDiv(*this, other);
 }
