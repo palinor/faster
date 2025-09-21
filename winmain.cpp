@@ -87,6 +87,7 @@ int main(int, char *) {
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImPlot::CreateContext();
+	ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 	ImGuiIO &input_output = ImGui::GetIO(); (void)input_output;
 	input_output.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
@@ -153,6 +154,8 @@ int main(int, char *) {
 		ImGui::NewFrame();
 
 		imGuiRenderLoop(&data);
+		static bool use_vsync = false;
+		ImGui::Checkbox("Vsync", &use_vsync);
 
 		ImGui::Render();
 
@@ -195,7 +198,7 @@ int main(int, char *) {
 
 		global_pd3d_command_queue->ExecuteCommandLists(1, (ID3D12CommandList *const *)&global_pd3d_command_list);
 
-		global_swapchain_pointer->Present(1, 0);
+		global_swapchain_pointer->Present(use_vsync ? 1 : 0, 0);
 
 		UINT64 fence_value = global_fence_last_signaled_value + 1;
 		global_pd3d_command_queue->Signal(global_fence, fence_value);
