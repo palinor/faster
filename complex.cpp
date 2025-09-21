@@ -4,6 +4,8 @@ struct c_float {
 	float re;
 	float im;
 
+	explicit c_float(float x) : re(x), im(0) {};
+	explicit c_float(float x, float y) : re(x), im(y) {};
 	c_float operator+(c_float other);
 	c_float operator-(c_float other);
 	c_float operator*(c_float other);
@@ -12,31 +14,23 @@ struct c_float {
 };
 
 inline c_float CInject(float x) {
-	c_float res;
-	res.re = x;
-	res.im = 0;
+	c_float res{ x, 0 };
 	return res;
 }
 
 // Ok, now I get why operator overloading is nice
 inline c_float CAdd(c_float x, c_float y) {
-	c_float z;
-	z.re = x.re + y.re;
-	z.im = x.im + y.im;
+	c_float z{x.re + y.re, x.im + y.im};
 	return z;
 }
 
 inline c_float CSub(c_float x, c_float y) {
-	c_float z;
-	z.re = x.re - y.re;
-	z.im = x.im - y.im;
+	c_float z{ x.re - y.re, x.im - y.im };
 	return z;
 }
 
 inline c_float CMul(c_float x, c_float y) {
-	c_float z;
-	z.re = x.re * y.re - x.im * y.im;
-	z.im = x.re * y.im + x.im * y.re;
+	c_float z{ x.re * y.re - x.im * y.im, x.re * y.im + x.im * y.re };
 	return z;
 }
 
@@ -49,9 +43,7 @@ inline float CModule(c_float z) {
 }
 
 inline c_float CConj(c_float z) {
-	c_float res;
-	res.re = z.re;
-	res.im = - z.im;
+	c_float res{ z.re, -z.im };
 }
  
 inline c_float CDiv(c_float x, c_float y) {
