@@ -29,13 +29,12 @@ struct PolynomialFloat {
      * Evaluate the polynomial function at some point x
      */
     float operator()(float x) {
-        float result = 0;
-        float x_n = 1;
-        float *this_coefficient = coefficients;
-        for (uint deg_idx = 0; deg_idx < number_of_coefficients; ++deg_idx) {
-            result += *this_coefficient++ * x_n;
-            x_n *= x;
+        float *this_coefficient = coefficients + number_of_coefficients - 1;
+        float result = *this_coefficient;
+        for (int deg_idx = number_of_coefficients - 1; deg_idx > 1; --deg_idx) {
+            result = fmaf(result, x, *this_coefficient--);
         }
+        result += *this_coefficient;
         return result;
     };
 
